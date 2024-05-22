@@ -70,6 +70,14 @@ C:::::C              O:::::O     O:::::OM::::::M    M:::::M    M::::::M  P::::P 
 
 ]]
 
+local function createLookupTable(list)
+  local lookup = {}
+  for _, value in ipairs(list) do
+    lookup[value] = true
+  end
+  return lookup
+end
+
 --/// Tokenizer ///--
 local TOKENIZER_LUA_CONSTANTS     = { "true", "false", "nil" }
 local TOKENIZER_LUA_OPERATORS     = { "+", "-", "*", "/", "%", "^" }
@@ -78,12 +86,9 @@ local TOKENIZER_RESERVED_KEYWORDS = { "while",    "do",     "end",   "for",
                                       "in",       "if",     "else",  "elseif",
                                       "function", "then",   "break", "continue" }
 
-local TOKENIZER_RESERVED_KEYWORDS_LOOKUP = {}
-for _, keyword in ipairs(TOKENIZER_RESERVED_KEYWORDS) do TOKENIZER_RESERVED_KEYWORDS_LOOKUP[keyword] = true end
-local TOKENIZER_LUA_CONSTANTS_LOOKUP = {}
-for _, constant in ipairs(TOKENIZER_LUA_CONSTANTS) do TOKENIZER_LUA_CONSTANTS_LOOKUP[constant] = true end
-local TOKENIZER_LUA_OPERATORS_LOOKUP = {}
-for _, operator in ipairs(TOKENIZER_LUA_OPERATORS) do TOKENIZER_LUA_OPERATORS_LOOKUP[operator] = true end
+local TOKENIZER_LUA_CONSTANTS_LOOKUP     = createLookupTable(TOKENIZER_LUA_CONSTANTS)
+local TOKENIZER_LUA_OPERATORS_LOOKUP     = createLookupTable(TOKENIZER_LUA_OPERATORS)
+local TOKENIZER_RESERVED_KEYWORDS_LOOKUP = createLookupTable(TOKENIZER_RESERVED_KEYWORDS)
 
 --* Tokenizer *--
 local Tokenizer = {}
@@ -108,7 +113,7 @@ function Tokenizer.tokenize(code)
     local updatedCharPos = curCharPos + (n or 1)
     local updatedChar    = charStream[updatedCharPos] or "\0"
     curCharPos = updatedCharPos
-    curChar = updatedChar
+    curChar    = updatedChar
     return updatedChar
   end
 
@@ -192,7 +197,7 @@ function Tokenizer.tokenize(code)
     elseif isString(curChar) then
       return { TYPE = "String", Value = consumeString() }
     elseif isVarArg() then
-      consume(3)
+      consume(2)
       return { TYPE = "VarArg" }
     elseif TOKENIZER_LUA_OPERATORS_LOOKUP[curChar] then
       return { TYPE = "Operator", Value = curChar }
@@ -216,20 +221,19 @@ function Tokenizer.tokenize(code)
 end
 
 --/// Parser ///--
-local PARSER_STOP_KEYWORDS = { ["end"] = true,    ["else"] = true,
-                               ["elseif"] = true, ["until"] = true }
 local PARSER_UNARY_OPERATOR_PRECEDENCE = 8
+local PARSER_STOP_KEYWORDS       = createLookupTable({ "end", "else", "elseif", "until" })
 local PARSER_OPERATOR_PRECEDENCE = { ["+"]   = {6, 6},  ["-"]  = {6, 6},
                                      ["*"]   = {7, 7},  ["/"]  = {7, 7}, ["%"] = {7, 7},
                                      ["^"]   = {10, 9}, [".."] = {5, 4},
                                      ["=="]  = {3, 3},  ["~="] = {3, 3},
                                      ["<"]   = {3, 3},  [">"]  = {3, 3}, ["<="] = {3, 3}, [">="] = {3, 3},
                                      ["and"] = {2, 2},  ["or"] = {1, 1} }
-local PARSER_LUA_UNARY_OPERATORS  = { "-", "#", "not" }
-local PARSER_LUA_BINARY_OPERATORS = { "+",  "-",   "*",  "/",
+local PARSER_LUA_UNARY_OPERATORS  = createLookupTable({ "-", "#", "not" })
+local PARSER_LUA_BINARY_OPERATORS = createLookupTable({ "+",  "-",   "*",  "/",
                                       "%",  "^",   "..", "==",
                                       "~=", "<",   ">",  "<=",
-                                      ">=", "and", "or" }
+                                      ">=", "and", "or" })
 
 --* Parser *--
 local Parser = {}
@@ -254,25 +258,26 @@ function Parser.parse(tokens)
 
   --// TOKEN CHECKERS //--
   local function isUnaryOperator(token)
-    return token.TYPE == "Character" and PARSER_LUA_UNARY_OPERATORS[token.Value]
+    return token and token.TYPE == "Operator" and PARSER_LUA_UNARY_OPERATORS[token.Value]
   end
   local function isBinaryOperator(token)
-    return token.TYPE == "Character" and PARSER_LUA_BINARY_OPERATORS[token.Value]
+    return token and token.TYPE == "Operator" and PARSER_LUA_BINARY_OPERATORS[token.Value]
   end
 
   --// EXPECTORS //--
-  local function expectCharacter(character)
+  local function expectCharacter(character, dontConsume)
     assert(currentToken and currentToken.TYPE == "Character", "Expected a character")
     assert(currentToken.Value == character, "Expected '" .. character .. "'")
-    consume()
+    if not dontConsume then consume() end
   end
-  local function expectKeyword(keyword)
+  local function expectKeyword(keyword, dontConsume)
     assert(currentToken and currentToken.TYPE == "Keyword", "Expected a keyword")
     assert(currentToken.Value == keyword, "Expected '" .. keyword .. "'")
-    consume()
+    if not dontConsume then consume() end
   end
 
   --// PARSERS //--
+  local consumeExpression, consumeExpressions
   local function consumeIdentifierList()
     local identifiers = {}
     while currentToken.TYPE == "Identifier" do
@@ -288,6 +293,12 @@ function Parser.parse(tokens)
     local indexToken = { TYPE = "String", Value = currentToken.Value }
     return { TYPE = "TableIndex", Index = indexToken, Expression = currentExpression }
   end
+  local function parseFunctionCall(currentExpression)
+    consume() -- Consume the "("
+    local arguments = consumeExpressions()
+    consume() -- Consume the last token of the expression
+    return { TYPE = "FunctionCall", Expression = currentExpression, Arguments = arguments }
+  end
   local function consumeOptionalSemilcolon()
     local nextToken = lookAhead()
     if nextToken and nextToken.Value == ";" and nextToken.TYPE == "Character" then
@@ -298,9 +309,9 @@ function Parser.parse(tokens)
   --// EXPRESSSION PARSERS //--
   local parsePrimaryExpression, parseSuffixExpression,
         parsePrefixExpression,  parseUnaryOperator,
-        parseBinaryExpression,  consumeExpression,
-        consumeExpressions
+        parseBinaryExpression
   function parsePrimaryExpression()
+    if not currentToken then return end
     local tokenType = currentToken.TYPE
     local tokenValue = currentToken.Value
 
@@ -322,7 +333,11 @@ function Parser.parse(tokens)
   function parseSuffixExpression(primaryExpression)
     local nextToken = lookAhead()
     local nextTokenValue = nextToken and nextToken.Value
-    if nextTokenValue == "." then -- Table access
+    if nextTokenValue == "(" then -- Function call
+      consume()
+      -- <expression> \( <args> \)
+      return parseFunctionCall(primaryExpression)
+    elseif nextTokenValue == "." then -- Table access
       consume()
       -- <expression> \. <identifier>
       return consumeTableIndex(primaryExpression)
@@ -374,7 +389,7 @@ function Parser.parse(tokens)
       local right = parseBinaryExpression(precedence[2])
       if not right then error("Unexpected end") end
 
-      expression = { TYPE = "Operator",
+      expression = { TYPE = "BinaryOperator",
         Operator = operatorToken.Value,
         Left = expression, Right = right }
     end
@@ -390,13 +405,14 @@ function Parser.parse(tokens)
   end
   function consumeExpressions()
     local expressions = { consumeExpression() }
-    if #expressions == 0 then return expressions end
+    if #expressions == 0 then return {} end
 
     local nextToken = lookAhead()
     while nextToken.TYPE == "Character" and nextToken.Value == "," do
       consume(2) -- Consume the last token of the last expression and ","
       local expression = consumeExpression()
       table.insert(expressions, expression)
+      nextToken = lookAhead()
     end
 
     return expressions
@@ -418,7 +434,7 @@ function Parser.parse(tokens)
     consume() -- Consume the last token of the condition
     expectKeyword("do")
     local codeblock = parseCodeBlock()
-    expectKeyword("end")
+    expectKeyword("end", true)
     return { TYPE = "WhileLoop", Condition = condition, Codeblock = codeblock }
   end
   local function parseRepeat()
@@ -431,7 +447,7 @@ function Parser.parse(tokens)
   local function parseDo()
     consume() -- Consume the "do" token
     local codeblock = parseCodeBlock()
-    expectKeyword("end")
+    expectKeyword("end", true)
     return { TYPE = "DoBlock", Codeblock = codeblock }
   end
   local function parseReturn()
@@ -463,7 +479,7 @@ function Parser.parse(tokens)
 
     local expression = consumeExpression()
     consumeOptionalSemilcolon()
-    return expression
+    return expression.Value
   end
   function parseCodeBlock()
     local nodeList = { TYPE = "Group" }
@@ -483,7 +499,7 @@ function Parser.parse(tokens)
     return ast
   end
 
-  return parseCodeBlock()
+  return parse()
 end
 
 --// Compiler //--
@@ -491,12 +507,11 @@ end
 --* Compiler *--
 local Compiler = {}
 function Compiler.compile(ast)
-
+  -- To be implemented... later
 end
 
-return (function(code)
-  local tokens = Tokenizer.tokenize(code)
-  local ast = Parser.parse(tokens)
-  local compiledProto = Compiler.compile(ast)
-  return compiledProto
-end)
+return {
+  Tokenizer = Tokenizer,
+  Parser = Parser,
+  Compiler = Compiler
+}
