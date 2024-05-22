@@ -34,10 +34,11 @@ file.
 
 ### I'm back, that didn't make sense
 
-Ouch, I'm really sorry. Let me know how it can be improved.  
-Email me at ddavi142@asu.edu or open an issue on this repo.
+Ouch, I'm really sorry. Let me know how it can be improved, by emailing me at ddavi142@asu.edu or opening an issue on this repo.
 
 ### Example usage?
+
+Currently, this project is not fully complete. However, when it'll be, you will be able to use it like this:
 
 ```lua
 local theTinyLuaCompiler = require("the-tiny-lua-compiler")
