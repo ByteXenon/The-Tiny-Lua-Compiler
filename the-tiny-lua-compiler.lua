@@ -177,7 +177,7 @@ function Tokenizer.tokenize(code)
     return table.concat(string)
   end
 
-  --// MAIN //--
+  --// TOKENIZERS //--
   local function getNextToken()
     local curChar = curChar
     if isWhitespace(curChar) then
@@ -205,6 +205,8 @@ function Tokenizer.tokenize(code)
 
     return { TYPE = "Character", Value = curChar }
   end
+
+  --// MAIN //--
   local function tokenize()
     local tokens = {}
     while curChar ~= "\0" do
@@ -513,9 +515,7 @@ function Compiler.compile(ast)
   local constants = {}
   local constantLookup = {}
 
-  --// UTILS //--
-
-  --/// Register Management ///--
+  --// REGISTER MANAGEMENT //--
   local function allocateRegister()
     for i = 0, 255 do
       if not takenRegisters[i] then
@@ -534,7 +534,7 @@ function Compiler.compile(ast)
     end
   end
 
-  --/// Constant Management ///--
+  --// UTILITY FUNCTIONS //--
   local function findOrCreateConstant(value)
     if constantLookup[value] then
       return constantLookup[value]
@@ -553,6 +553,7 @@ function Compiler.compile(ast)
     locals[localName] = register
   end
 
+  --// CODE GENERATION //--
   local function processExpressionNode(node, expressionRegister)
     local expressionRegister = expressionRegister or allocateRegister()
     local nodeType = node.TYPE
@@ -591,16 +592,20 @@ function Compiler.compile(ast)
       error("Unsupported statement node type: " .. tostring(nodeType))
     end
   end
-
   local function processCodeBlock(list)
     for index, node in ipairs(list) do
       processStatementNode(node)
     end
   end
 
-  processCodeBlock(ast)
-  return { locals, takenRegisters,
-           code,   constants }
+  --// MAIN //--
+  local function compile()
+    processCodeBlock(ast)
+    return { locals, takenRegisters,
+            code,   constants }
+  end
+
+  return compile()
 end
 
 return {
