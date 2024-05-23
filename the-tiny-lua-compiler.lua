@@ -507,7 +507,100 @@ end
 --* Compiler *--
 local Compiler = {}
 function Compiler.compile(ast)
-  -- To be implemented... later
+  local locals = {}
+  local takenRegisters = {}
+  local code = {}
+  local constants = {}
+  local constantLookup = {}
+
+  --// UTILS //--
+
+  --/// Register Management ///--
+  local function allocateRegister()
+    for i = 0, 255 do
+      if not takenRegisters[i] then
+        takenRegisters[i] = true
+        return i
+      end
+    end
+    error("Out of registers")
+  end
+  local function deallocateRegister(register)
+    takenRegisters[register] = nil
+  end
+  local function deallocateRegisters(registers)
+    for _, register in ipairs(registers) do
+      takenRegisters[register] = nil
+    end
+  end
+
+  --/// Constant Management ///--
+  local function findOrCreateConstant(value)
+    if constantLookup[value] then
+      return constantLookup[value]
+    end
+    table.insert(constants, value)
+    local constantIndex = -(#constants)
+    constantLookup[value] = constantIndex
+    return constantIndex
+  end
+  local function addInstruction(opname, a, b, c)
+    local instruction = { opname, a, b, c }
+    table.insert(code, instruction)
+    return instruction
+  end
+  local function registerVariable(localName, register)
+    locals[localName] = register
+  end
+
+  local function processExpressionNode(node, expressionRegister)
+    local expressionRegister = expressionRegister or allocateRegister()
+    local nodeType = node.TYPE
+    while nodeType == "Expression" do
+      node = node.Value
+      nodeType = node.TYPE
+    end
+
+    if nodeType == "Number" then
+      addInstruction("LOADK", expressionRegister, findOrCreateConstant(node.Value))
+    elseif nodeType == "Identifier" then
+      -- Always assume it's a global
+      addInstruction("GETGLOBAL", expressionRegister, findOrCreateConstant(node.Value))
+    elseif nodeType == "String" then
+      addInstruction("LOADK", expressionRegister, findOrCreateConstant(node.Value))
+    else
+      error("Unsupported expression node type: " .. tostring(nodeType))
+    end
+
+    return expressionRegister
+  end
+  local function processStatementNode(node)
+    local nodeType = node.TYPE
+    if nodeType == "FunctionCall" then
+      local expressionRegister = processExpressionNode(node.Expression)
+      local argumentRegisters = {}
+      for _, argument in ipairs(node.Arguments) do
+        local argumentRegister = processExpressionNode(argument)
+        table.insert(argumentRegisters, argumentRegister)
+        deallocateRegister(argumentRegister)
+      end
+      addInstruction("CALL", expressionRegister, #node.Arguments + 1, 2)
+      deallocateRegister(expressionRegister)
+      deallocateRegisters(argumentRegisters)
+    else
+      error("Unsupported statement node type: " .. tostring(nodeType))
+    end
+  end
+
+  local function processCodeBlock(list)
+    for index, node in ipairs(list) do
+      processStatementNode(node)
+    end
+  end
+
+  processCodeBlock(ast)
+  return { locals, takenRegisters,
+           code,   constants }
 end
 
 return {
