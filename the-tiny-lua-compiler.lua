@@ -244,6 +244,8 @@ function Parser.parse(tokens)
   local tokens            = tokens
   local currentToken      = tokens[1]
   local currentTokenIndex = 1
+  local scopeStack        = {}
+  local currentScope      = {}
 
   --// TOKEN NAVIGATION //--
   local function lookAhead(n)
@@ -257,6 +259,39 @@ function Parser.parse(tokens)
     currentTokenIndex = updatedTokenIndex
     currentToken      = updatedToken
     return updatedToken
+  end
+
+  --// SCOPE MANAGEMENT //--
+  local function pushScope()
+    local scope = {
+      localVariables = {}
+    }
+    table.insert(scopeStack, scope)
+    currentScope = scope
+    return scope
+  end
+  local function popScope()
+    scopeStack[#scopeStack] = nil
+    currentScope = scopeStack[#scopeStack]
+  end
+
+  --// IN-SCOPE VARIABLE MANAGEMENT //--
+  local function declareLocalVariable(variable)
+    currentScope.localVariables[variable] = true
+  end
+  local function declareLocalVariables(variables)
+    for _, variable in ipairs(variables) do
+      declareLocalVariable(variable)
+    end
+  end
+  local function getVariableType(variableName)
+    for scopeIndex = #scopeStack, 1, -1 do
+      local scope = scopeStack[scopeIndex]
+      if scope.localVariables[variableName] then
+        return "Local", scopeIndex
+      end
+    end
+    return "Global"
   end
 
   --// TOKEN CHECKERS //--
@@ -327,7 +362,9 @@ function Parser.parse(tokens)
      or tokenType == "Constant" or tokenType == "VarArg" then
       return currentToken
     elseif tokenType == "Identifier" then
-      return currentToken
+      local variableType = getVariableType(tokenValue)
+      local variableNode = { TYPE = variableType, Value = tokenValue }
+      return variableNode
     elseif tokenType == "Character" then
       if tokenValue == "(" then -- Parenthesized expression
         consume() -- Consume the parenthesis
@@ -431,6 +468,7 @@ function Parser.parse(tokens)
   local function parseLocal()
     consume() -- Consume the "local" token
     local variables = consumeIdentifierList()
+    declareLocalVariables(variables)
     consume() -- Consume the last token of the last identifier
     expectCharacter("=")
     local expressions = consumeExpressions()
@@ -514,6 +552,7 @@ function Parser.parse(tokens)
     return expression.Value
   end
   function parseCodeBlock()
+    pushScope()
     local nodeList = { TYPE = "Group" }
     while currentToken do
       local node = getNextNode()
@@ -521,6 +560,7 @@ function Parser.parse(tokens)
       table.insert(nodeList, node)
       consume()
     end
+    popScope()
     return nodeList
   end
 
