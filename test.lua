@@ -32,6 +32,7 @@ end
 --/// TOKENIZER TESTS ///--
 local simpleTestScript = [[
   local a = 10 + 1;
+  print(a)
   while true do
     print('test string', ...)
   end
@@ -48,6 +49,10 @@ local simpleTestTokens = {
   { TYPE = "Operator",   Value = "+" },
   { TYPE = "Number",     Value = "1" },
   { TYPE = "Character",  Value = ";" },
+  { TYPE = "Identifier", Value = "print" },
+  { TYPE = "Character",  Value = "(" },
+  { TYPE = "Identifier", Value = "a" },
+  { TYPE = "Character",  Value = ")" },
   { TYPE = "Keyword",    Value = "while" },
   { TYPE = "Constant",   Value = "true" },
   { TYPE = "Keyword",    Value = "do" },
@@ -102,6 +107,11 @@ local expectedAST = {
     }
   },
   {
+    TYPE = "FunctionCall",
+    Expression = { TYPE = "Global", Value = "print" },
+    Arguments = { { TYPE = "Expression", Value = { TYPE = "Local", Value = "a" } } }
+  },
+  {
     TYPE = "WhileLoop",
     Condition = {
       TYPE = "Expression",
@@ -111,7 +121,7 @@ local expectedAST = {
       TYPE = "Group",
       {
         TYPE = "FunctionCall",
-        Expression = { TYPE = "Identifier", Value = "print" },
+        Expression = { TYPE = "Global", Value = "print" },
         Arguments = {
           { TYPE = "Expression", Value = { TYPE = "String", Value = "test string" } },
           { TYPE = "Expression", Value = { TYPE = "VarArg" } }
@@ -129,7 +139,7 @@ local expectedAST = {
       TYPE = "Group",
       {
         TYPE = "FunctionCall",
-        Expression = { TYPE = "Identifier", Value = "print" },
+        Expression = { TYPE = "Global", Value = "print" },
         Arguments = { { TYPE = "Expression", Value = { TYPE = "Number", Value = "1" } } }
       }
     },
@@ -143,7 +153,7 @@ local expectedAST = {
           TYPE = "Group",
           {
             TYPE = "FunctionCall",
-            Expression = { TYPE = "Identifier", Value = "print" },
+            Expression = { TYPE = "Global", Value = "print" },
             Arguments = { { TYPE = "Expression", Value = { TYPE = "Number", Value = "2" } } }
           }
         }
@@ -153,7 +163,7 @@ local expectedAST = {
       TYPE = "Group",
       {
         TYPE = "FunctionCall",
-        Expression = { TYPE = "Identifier", Value = "print" },
+        Expression = { TYPE = "Global", Value = "print" },
         Arguments = { { TYPE = "Expression", Value = { TYPE = "Number", Value = "3" } } }
       }
     }
