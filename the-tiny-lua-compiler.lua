@@ -150,6 +150,7 @@ function Tokenizer.tokenize(code)
     local whitespace = { curChar }
     while isWhitespace(lookAhead()) do
       table.insert(whitespace, curChar)
+      consume()
     end
     return table.concat(whitespace)
   end
