@@ -30,7 +30,16 @@ local function assertTableEquals(table1, table2, path)
 end
 
 --/// TOKENIZER TESTS ///--
-local simpleTestScript = "local a = 10 + 1; while true do print('test string', ...) end"
+local simpleTestScript = [[
+  local a = 10 + 1;
+  while true do
+    print('test string', ...)
+  end
+  if 1     then print(1)
+  elseif 2 then print(2)
+  else          print(3)
+  end
+]]
 local simpleTestTokens = {
   { TYPE = "Keyword",    Value = "local" },
   { TYPE = "Identifier", Value = "a" },
@@ -47,6 +56,26 @@ local simpleTestTokens = {
   { TYPE = "String",     Value = "test string" },
   { TYPE = "Character",  Value = "," },
   { TYPE = "VarArg" },
+  { TYPE = "Character",  Value = ")" },
+  { TYPE = "Keyword",    Value = "end" },
+  { TYPE = "Keyword",    Value = "if" },
+  { TYPE = "Number",     Value = "1" },
+  { TYPE = "Keyword",    Value = "then" },
+  { TYPE = "Identifier", Value = "print" },
+  { TYPE = "Character",  Value = "(" },
+  { TYPE = "Number",     Value = "1" },
+  { TYPE = "Character",  Value = ")" },
+  { TYPE = "Keyword",    Value = "elseif" },
+  { TYPE = "Number",     Value = "2" },
+  { TYPE = "Keyword",    Value = "then" },
+  { TYPE = "Identifier", Value = "print" },
+  { TYPE = "Character",  Value = "(" },
+  { TYPE = "Number",     Value = "2" },
+  { TYPE = "Character",  Value = ")" },
+  { TYPE = "Keyword",    Value = "else" },
+  { TYPE = "Identifier", Value = "print" },
+  { TYPE = "Character",  Value = "(" },
+  { TYPE = "Number",     Value = "3" },
   { TYPE = "Character",  Value = ")" },
   { TYPE = "Keyword",    Value = "end" }
 }
@@ -87,6 +116,45 @@ local expectedAST = {
           { TYPE = "Expression", Value = { TYPE = "String", Value = "test string" } },
           { TYPE = "Expression", Value = { TYPE = "VarArg" } }
         }
+      }
+    }
+  },
+  {
+    TYPE = "IfStatement",
+    Condition = {
+      TYPE = "Expression",
+      Value = { TYPE = "Number", Value = "1" }
+    },
+    Codeblock = {
+      TYPE = "Group",
+      {
+        TYPE = "FunctionCall",
+        Expression = { TYPE = "Identifier", Value = "print" },
+        Arguments = { { TYPE = "Expression", Value = { TYPE = "Number", Value = "1" } } }
+      }
+    },
+    ElseIfs = {
+      {
+        Condition = {
+          TYPE = "Expression",
+          Value = { TYPE = "Number", Value = "2" }
+        },
+        Codeblock = {
+          TYPE = "Group",
+          {
+            TYPE = "FunctionCall",
+            Expression = { TYPE = "Identifier", Value = "print" },
+            Arguments = { { TYPE = "Expression", Value = { TYPE = "Number", Value = "2" } } }
+          }
+        }
+      }
+    },
+    ElseCodeblock = {
+      TYPE = "Group",
+      {
+        TYPE = "FunctionCall",
+        Expression = { TYPE = "Identifier", Value = "print" },
+        Arguments = { { TYPE = "Expression", Value = { TYPE = "Number", Value = "3" } } }
       }
     }
   }
