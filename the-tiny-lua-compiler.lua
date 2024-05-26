@@ -661,15 +661,18 @@ function Compiler.compile(ast)
       deallocateRegisters(argumentRegisters)
     elseif nodeType == "LocalDeclaration" then
       local expressionRegisters = {}
-      for _, expression in ipairs(node.Expressions) do
+      for index, expression in ipairs(node.Expressions) do
         local expressionRegister = processExpressionNode(expression)
         table.insert(expressionRegisters, expressionRegister)
+        if not node.Variables[index] then
+          -- If this expression doesn't have a corresponding variable, deallocate it
+          deallocateRegister(expressionRegister)
+        end
       end
       for index, localName in ipairs(node.Variables) do
         local expressionRegister = expressionRegisters[index]
         registerVariable(localName, expressionRegister)
       end
-      deallocateRegisters(expressionRegisters)
     else
       error("Unsupported statement node type: " .. tostring(nodeType))
     end
