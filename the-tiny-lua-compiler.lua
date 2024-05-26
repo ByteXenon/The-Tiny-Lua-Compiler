@@ -634,9 +634,10 @@ function Compiler.compile(ast)
 
     if nodeType == "Number" then
       addInstruction("LOADK", expressionRegister, findOrCreateConstant(node.Value))
-    elseif nodeType == "Identifier" then
-      -- Always assume it's a global
+    elseif nodeType == "Global" then
       addInstruction("GETGLOBAL", expressionRegister, findOrCreateConstant(node.Value))
+    elseif nodeType == "Local" then
+      addInstruction("MOVE", expressionRegister, locals[node.Value])
     elseif nodeType == "String" then
       addInstruction("LOADK", expressionRegister, findOrCreateConstant(node.Value))
     else
@@ -658,6 +659,17 @@ function Compiler.compile(ast)
       addInstruction("CALL", expressionRegister, #node.Arguments + 1, 2)
       deallocateRegister(expressionRegister)
       deallocateRegisters(argumentRegisters)
+    elseif nodeType == "LocalDeclaration" then
+      local expressionRegisters = {}
+      for _, expression in ipairs(node.Expressions) do
+        local expressionRegister = processExpressionNode(expression)
+        table.insert(expressionRegisters, expressionRegister)
+      end
+      for index, localName in ipairs(node.Variables) do
+        local expressionRegister = expressionRegisters[index]
+        registerVariable(localName, expressionRegister)
+      end
+      deallocateRegisters(expressionRegisters)
     else
       error("Unsupported statement node type: " .. tostring(nodeType))
     end
