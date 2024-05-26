@@ -259,6 +259,11 @@ function Parser.parse(tokens)
   end
 
   --// TOKEN CHECKERS //--
+  local function checkToken(tokenType, tokenValue)
+    return currentToken
+      and currentToken.TYPE  == tokenType
+      and currentToken.Value == tokenValue
+  end
   local function isUnaryOperator(token)
     return token and token.TYPE == "Operator" and PARSER_LUA_UNARY_OPERATORS[token.Value]
   end
@@ -460,6 +465,29 @@ function Parser.parse(tokens)
   local function parseBreak()
     return { TYPE = "BreakStatement" }
   end
+  local function parseIf()
+    consume() -- Consume the "if" token
+    local condition = consumeExpression()
+    consume() -- Consume the last token of the condition
+    expectKeyword("then")
+    local codeblock = parseCodeBlock()
+    local elseifs = {}
+    while checkToken("Keyword", "elseif") do
+      consume() -- Consume the "elseif" token
+      local elseifCondition = consumeExpression()
+      consume() -- Consume the last token of the condition
+      expectKeyword("then")
+      local elseifCodeblock = parseCodeBlock()
+      table.insert(elseifs, { Condition = elseifCondition, Codeblock = elseifCodeblock })
+    end
+    local elseCodeblock
+    if checkToken("Keyword", "else") then
+      consume() -- Consume the "else" token
+      elseCodeblock = parseCodeBlock()
+    end
+    expectKeyword("end", true)
+    return { TYPE = "IfStatement", Condition = condition, Codeblock = codeblock, ElseIfs = elseifs, ElseCodeblock = elseCodeblock }
+  end
 
   --// CODE BLOCK PARSERS //--
   function getNextNode()
@@ -474,6 +502,7 @@ function Parser.parse(tokens)
       elseif currentTokenValue == "do"           then node = parseDo()
       elseif currentTokenValue == "return"       then node = parseReturn()
       elseif currentTokenValue == "break"        then node = parseBreak()
+      elseif currentTokenValue == "if"           then node = parseIf()
       else error("Unsupported keyword: " .. currentTokenValue) end
       consumeOptionalSemilcolon()
       return node
