@@ -671,6 +671,11 @@ function Compiler.compile(ast)
       end
       for index, localName in ipairs(node.Variables) do
         local expressionRegister = expressionRegisters[index]
+        if not expressionRegister then
+          -- Load nil into the register
+          expressionRegister = allocateRegister()
+          addInstruction("LOADNIL", expressionRegister, expressionRegister)
+        end
         registerVariable(localName, expressionRegister)
       end
     else
