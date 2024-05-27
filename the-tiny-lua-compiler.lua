@@ -892,10 +892,6 @@ function Compiler.compile(ast)
       instruction = instruction + opcode
       instruction = instruction + (a * 64)               -- a << 6
       instruction = instruction + ((b + 131071) * 16384) -- (b + 131071) << 14
-    elseif opmode == MODE_iAB then
-      instruction = instruction + opcode
-      instruction = instruction + (a * 64)    -- a << 6
-      instruction = instruction + (b * 16384) -- b << 14
     end
     return makeFourBytes(instruction)
   end
