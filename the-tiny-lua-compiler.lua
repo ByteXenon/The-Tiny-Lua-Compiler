@@ -656,7 +656,7 @@ function Compiler.compile(ast)
         table.insert(argumentRegisters, argumentRegister)
         deallocateRegister(argumentRegister)
       end
-      addInstruction("CALL", expressionRegister, #node.Arguments + 1, 2)
+      addInstruction("CALL", expressionRegister, #node.Arguments + 1, 1)
       deallocateRegister(expressionRegister)
       deallocateRegisters(argumentRegisters)
     elseif nodeType == "LocalDeclaration" then
