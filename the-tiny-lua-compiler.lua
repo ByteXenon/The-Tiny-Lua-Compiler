@@ -407,6 +407,7 @@ function Parser.parse(tokens)
     return primaryExpression
   end
   function parseUnaryOperator()
+    local unaryOperator = currentToken
     -- <unary> ::= <unary operator> <unary> | <primary>
     if not isUnaryOperator(currentToken) then
       return parsePrefixExpression(UNARY_OPERATOR_PRECEDENCE)
@@ -675,6 +676,32 @@ function Compiler.compile(ast)
       addInstruction("MOVE", expressionRegister, locals[node.Value])
     elseif nodeType == "String" then
       addInstruction("LOADK", expressionRegister, findOrCreateConstant(node.Value))
+    elseif nodeType == "BinaryOperator" then
+      local nodeOperator = node.Operator
+      local simpleArichmeticOperatorLookup = {
+        ["+"] = "ADD", ["-"] = "SUB", ["*"] = "MUL", ["/"] = "DIV",
+        ["%"] = "MOD", ["^"] = "POW"
+      }
+      local operatorOpcode = simpleArichmeticOperatorLookup[nodeOperator]
+      if not operatorOpcode then
+        error("Unsupported binary operator: " .. tostring(nodeOperator))
+      end
+      local leftExpression = processExpressionNode(node.Left)
+      local rightExpression = processExpressionNode(node.Right)
+      addInstruction(operatorOpcode, expressionRegister, leftExpression, rightExpression)
+      deallocateRegisters({ leftExpression, rightExpression }) -- Deallocate, as they won't be used anymore
+    elseif nodeType == "UnaryOperator" then
+      local nodeOperator = node.Operator
+      local simpleUnaryOperatorLookup = {
+        ["-"] = "UNM"
+      }
+      local operatorOpcode = simpleUnaryOperatorLookup[nodeOperator]
+      if not operatorOpcode then
+        error("Unsupported unary operator: " .. tostring(nodeOperator))
+      end
+      local operandExpression = processExpressionNode(node.Operand)
+      addInstruction(operatorOpcode, expressionRegister, operandExpression)
+      deallocateRegister(operandExpression)
     else
       error("Unsupported expression node type: " .. tostring(nodeType))
     end
