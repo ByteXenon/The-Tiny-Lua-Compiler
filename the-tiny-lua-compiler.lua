@@ -627,7 +627,7 @@ local MODE_iABC = 0
 local MODE_iABx = 1
 local MODE_iAsBx = 2
 
-local opcodeToNumberLookup = {
+local COMPILER_OPCODE_TO_NUMBER_LOOKUP = {
   ["MOVE"]     = 0,  ["LOADK"]     = 1,  ["LOADBOOL"] = 2,  ["LOADNIL"]   = 3,
   ["GETUPVAL"] = 4,  ["GETGLOBAL"] = 5,  ["GETTABLE"] = 6,  ["SETGLOBAL"] = 7,
   ["SETUPVAL"] = 8,  ["SETTABLE"]  = 9,  ["NEWTABLE"] = 10, ["SELF"]      = 11,
@@ -639,7 +639,7 @@ local opcodeToNumberLookup = {
   ["FORPREP"]  = 32, ["TFORLOOP"]  = 33, ["SETLIST"]  = 34, ["CLOSE"]     = 35,
   ["CLOSURE"]  = 36, ["VARARG"]    = 37
 }
-local opmodes = {
+local COMPILER_OPMODES = {
   [0] = MODE_iABC,  [1]  = MODE_iABx,  [2]  = MODE_iABC,
   [3] = MODE_iABC,  [4]  = MODE_iABC,  [5]  = MODE_iABx,
   [6] = MODE_iABC,  [7]  = MODE_iABx,  [8]  = MODE_iABC,
@@ -654,6 +654,19 @@ local opmodes = {
   [33] = MODE_iABC, [34] = MODE_iABC,  [35] = MODE_iABC,
   [36] = MODE_iABx, [37] = MODE_iABC
 }
+local COMPILER_SIMPLE_ARICHMETIC_OPERATOR_LOOKUP = {
+  ["+"] = "ADD", ["-"] = "SUB", ["*"] = "MUL", ["/"] = "DIV",
+  ["%"] = "MOD", ["^"] = "POW"
+}
+local COMPILER_CONDITIONAL_OPERATOR_LOOKUP = {
+  ["=="] = "EQ", ["~="] = "EQ",
+  ["<"]  = "LT", [">"]  = "LT",
+  ["<="] = "LE", [">="] = "LE"
+}
+local COMPILER_SIMPLE_UNARY_OPERATOR_LOOKUP = {
+  ["-"] = "UNM"
+}
+local NEGATIVE_CONDITIONAL_OPERATOR_LOOKUP = createLookupTable({"~=", ">", ">="})
 
 --* Compiler *--
 local Compiler = {}
@@ -721,24 +734,28 @@ function Compiler.compile(ast)
       addInstruction("LOADK", expressionRegister, findOrCreateConstant(node.Value))
     elseif nodeType == "BinaryOperator" then
       local nodeOperator = node.Operator
-      local simpleArichmeticOperatorLookup = {
-        ["+"] = "ADD", ["-"] = "SUB", ["*"] = "MUL", ["/"] = "DIV",
-        ["%"] = "MOD", ["^"] = "POW"
-      }
-      local operatorOpcode = simpleArichmeticOperatorLookup[nodeOperator]
-      if not operatorOpcode then
-        error("Unsupported binary operator: " .. tostring(nodeOperator))
+      local arithmeticOperatorOpcode = COMPILER_SIMPLE_ARICHMETIC_OPERATOR_LOOKUP[nodeOperator]
+      local leftExpressionRegister = processExpressionNode(node.Left)
+      local rightExpressionRegister = processExpressionNode(node.Right)
+      if not arithmeticOperatorOpcode then
+        local conditionalOperatorOpcode = COMPILER_CONDITIONAL_OPERATOR_LOOKUP[nodeOperator]
+        if not conditionalOperatorOpcode then
+          error("Unsupported binary operator: " .. tostring(nodeOperator))
+        end
+        local isConditionTrue = (NEGATIVE_CONDITIONAL_OPERATOR_LOOKUP[nodeOperator] and 0) or 1
+        addInstruction(conditionalOperatorOpcode, isConditionTrue, leftExpressionRegister, rightExpressionRegister)
+        addInstruction("JMP", 0, 1)
+        addInstruction("LOADBOOL", expressionRegister, 0, 1)
+        addInstruction("LOADBOOL", expressionRegister, 1, 0)
+      else
+        leftExpressionRegister = processExpressionNode(node.Left)
+        rightExpressionRegister = processExpressionNode(node.Right)
+        addInstruction(arithmeticOperatorOpcode, expressionRegister, leftExpressionRegister, rightExpressionRegister)
       end
-      local leftExpression = processExpressionNode(node.Left)
-      local rightExpression = processExpressionNode(node.Right)
-      addInstruction(operatorOpcode, expressionRegister, leftExpression, rightExpression)
-      deallocateRegisters({ leftExpression, rightExpression }) -- Deallocate, as they won't be used anymore
+      deallocateRegisters({ leftExpressionRegister, rightExpressionRegister }) -- Deallocate, as they won't be used anymore
     elseif nodeType == "UnaryOperator" then
       local nodeOperator = node.Operator
-      local simpleUnaryOperatorLookup = {
-        ["-"] = "UNM"
-      }
-      local operatorOpcode = simpleUnaryOperatorLookup[nodeOperator]
+      local operatorOpcode = COMPILER_SIMPLE_UNARY_OPERATOR_LOOKUP[nodeOperator]
       if not operatorOpcode then
         error("Unsupported unary operator: " .. tostring(nodeOperator))
       end
@@ -915,11 +932,11 @@ function Compiler.compile(ast)
     end
   end
   local function makeInstruction(instruction)
-    local opcode = opcodeToNumberLookup[instruction[1]]
+    local opcode = COMPILER_OPCODE_TO_NUMBER_LOOKUP[instruction[1]]
     local a = twosComplement(instruction[2] or 0, 9)
     local b = twosComplement(instruction[3] or 0, 9)
     local c = twosComplement(instruction[4] or 0, 9)
-    local opmode = opmodes[opcode]
+    local opmode = COMPILER_OPMODES[opcode]
     local mode = opmode
     local instruction = 0
     if opmode == MODE_iABC then
