@@ -77,10 +77,36 @@ local function createLookupTable(list)
   end
   return lookup
 end
+local function makeTrie(table)
+  local trieTable = {}
+  local longestElement = 0
+
+  for _, op in ipairs(table) do
+    if #op > longestElement then
+      longestElement = #op
+    end
+
+    local node = trieTable
+    for index = 1, #op do
+      local character = op:sub(index, index)
+      node[character] = node[character] or {}
+      node = node[character]
+    end
+    node.Value = op
+  end
+  return trieTable, longestElement
+end
 
 --/// Tokenizer ///--
-local TOKENIZER_LUA_CONSTANTS     = { "true", "false", "nil" }
-local TOKENIZER_LUA_OPERATORS     = { "+", "-", "*", "/", "%", "^" }
+local TOKENIZER_LUA_CONSTANTS = { "true", "false", "nil" }
+local TOKENIZER_LUA_OPERATORS = {
+  "^", "*", "/", "%",
+  "+", "-", "<", ">",
+  "#",
+
+  "<=",  ">=", "==",  "~=",
+  "and", "or", "not", ".."
+}
 local TOKENIZER_RESERVED_KEYWORDS = { "while",    "do",     "end",   "for",
                                       "local",    "repeat", "until", "return",
                                       "in",       "if",     "else",  "elseif",
@@ -89,6 +115,8 @@ local TOKENIZER_RESERVED_KEYWORDS = { "while",    "do",     "end",   "for",
 local TOKENIZER_LUA_CONSTANTS_LOOKUP     = createLookupTable(TOKENIZER_LUA_CONSTANTS)
 local TOKENIZER_LUA_OPERATORS_LOOKUP     = createLookupTable(TOKENIZER_LUA_OPERATORS)
 local TOKENIZER_RESERVED_KEYWORDS_LOOKUP = createLookupTable(TOKENIZER_RESERVED_KEYWORDS)
+
+local TOKENIZER_OPERATOR_TRIE, TOKENIZER_OPERATOR_LONGEST = makeTrie(TOKENIZER_LUA_OPERATORS)
 
 --* Tokenizer *--
 local Tokenizer = {}
@@ -177,6 +205,19 @@ function Tokenizer.tokenize(code)
     consume() -- Consume the closing delimiter
     return table.concat(string)
   end
+  local function consumeOperator()
+    local node = TOKENIZER_OPERATOR_TRIE
+    local operator
+
+    for index = 0, TOKENIZER_OPERATOR_LONGEST - 1 do
+      local character = lookAhead(index)
+      node = node[character]
+      if not node then break end
+      if node.Value then operator = node.Value end
+    end
+    if operator then consume(#operator - 1) end
+    return operator
+  end
 
   --// TOKENIZERS //--
   local function getNextToken()
@@ -200,10 +241,12 @@ function Tokenizer.tokenize(code)
     elseif isVarArg() then
       consume(2)
       return { TYPE = "VarArg" }
-    elseif TOKENIZER_LUA_OPERATORS_LOOKUP[curChar] then
-      return { TYPE = "Operator", Value = curChar }
     end
 
+    local operator = consumeOperator()
+    if operator then
+      return { TYPE = "Operator", Value = operator }
+    end
     return { TYPE = "Character", Value = curChar }
   end
 
