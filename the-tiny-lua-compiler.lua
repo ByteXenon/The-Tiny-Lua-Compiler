@@ -689,7 +689,6 @@ function Compiler.compile(ast)
       for _, argument in ipairs(node.Arguments) do
         local argumentRegister = processExpressionNode(argument)
         table.insert(argumentRegisters, argumentRegister)
-        deallocateRegister(argumentRegister)
       end
       addInstruction("CALL", expressionRegister, #node.Arguments + 1, 1)
       deallocateRegister(expressionRegister)
@@ -729,38 +728,35 @@ function Compiler.compile(ast)
 
   --// Bitwise operations (needed for compiling to bytecode) //--
   local function bitNot(value)
-    local p,c=1,0
+    local p, c = 1, 0
     while value > 0 do
-        local r=value%2
-        if r<1 then c=c+p end
-        value,p=(value-r)/2, p*2
+      local r = value % 2
+      if r < 1 then c = c + p end
+      value, p = (value - r) / 2, p * 2
     end
     return c
   end
   local function bitXor(m, n)
     local xr = 0
-    for p=0,31 do
-        local a = m / 2 + xr
-        local b = n / 2
-        if (a ~= math.floor(a)) and (b ~= math.floor(b)) then
-            xr = math.pow(2, p)
-        else
-            xr = 0
-        end
-        m, n = math.floor(a), math.floor(b)
+    for p=0, 31 do
+      local a = m / 2 + xr
+      local b = n / 2
+      if (a ~= math.floor(a)) and (b ~= math.floor(b)) then
+        xr = math.pow(2, p)
+      else
+        xr = 0
+      end
+      m, n = math.floor(a), math.floor(b)
     end
     return xr
   end
   local function twosComplement(value, bits)
     if value < 0 then
-      value = value + 1
-      if value < 0 then
-        value = bitXor(bitNot(math.abs(value)), math.pow(2, bits) - 1) + 1
-      end
+      value = (-value) - 1
     end
     return value
   end
-    local function makeOneByte(value)
+  local function makeOneByte(value)
     return string.char(value)
   end
   local function makeTwoBytes(value)
@@ -901,7 +897,7 @@ function Compiler.compile(ast)
     functionHeader = functionHeader .. makeOneByte(0) -- nups (Number of upvalues)
     functionHeader = functionHeader .. makeOneByte(0) -- Number of parameters
     functionHeader = functionHeader .. makeOneByte(2) -- Is vararg (2 = VARARG_HASARG)
-    functionHeader = functionHeader .. makeOneByte(5) -- Max stack size
+    functionHeader = functionHeader .. makeOneByte(128) -- Max stack size
 
     functionHeader = functionHeader .. makeCodeSection()
     functionHeader = functionHeader .. makeConstantSection()
