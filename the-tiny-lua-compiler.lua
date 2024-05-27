@@ -295,10 +295,14 @@ function Parser.parse(tokens)
   end
 
   --// TOKEN CHECKERS //--
-  local function checkToken(tokenType, tokenValue)
-    return currentToken
-      and currentToken.TYPE  == tokenType
-      and currentToken.Value == tokenValue
+  local function checkToken(tokenType, tokenValue, token)
+    local token = token or currentToken
+    return token
+          and token.TYPE  == tokenType
+          and token.Value == tokenValue
+  end
+  local function isComma(token)
+    return token and token.TYPE == "Character" and token.Value == ","
   end
   local function isUnaryOperator(token)
     return token and token.TYPE == "Operator" and PARSER_LUA_UNARY_OPERATORS[token.Value]
@@ -325,7 +329,7 @@ function Parser.parse(tokens)
     local identifiers = {}
     while currentToken.TYPE == "Identifier" do
       table.insert(identifiers, currentToken.Value)
-      if lookAhead().TYPE == "Character" and lookAhead().Value == "," then
+      if isComma(lookAhead()) then
         consume() -- Consume the comma
       else break end
     end
@@ -344,7 +348,7 @@ function Parser.parse(tokens)
   end
   local function consumeOptionalSemilcolon()
     local nextToken = lookAhead()
-    if nextToken and nextToken.Value == ";" and nextToken.TYPE == "Character" then
+    if checkToken("Character", ";", nextToken) then
       consume()
     end
   end
@@ -453,7 +457,7 @@ function Parser.parse(tokens)
     if #expressions == 0 then return {} end
 
     local nextToken = lookAhead()
-    while nextToken.TYPE == "Character" and nextToken.Value == "," do
+    while isComma(nextToken) do
       consume(2) -- Consume the last token of the last expression and ","
       local expression = consumeExpression()
       table.insert(expressions, expression)
