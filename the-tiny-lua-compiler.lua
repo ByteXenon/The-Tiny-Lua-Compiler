@@ -579,6 +579,37 @@ function Parser.parse(tokens)
 end
 
 --// Compiler //--
+local MODE_iABC = 0
+local MODE_iABx = 1
+local MODE_iAsBx = 2
+
+local opcodeToNumberLookup = {
+  ["MOVE"]     = 0,  ["LOADK"]     = 1,  ["LOADBOOL"] = 2,  ["LOADNIL"]   = 3,
+  ["GETUPVAL"] = 4,  ["GETGLOBAL"] = 5,  ["GETTABLE"] = 6,  ["SETGLOBAL"] = 7,
+  ["SETUPVAL"] = 8,  ["SETTABLE"]  = 9,  ["NEWTABLE"] = 10, ["SELF"]      = 11,
+  ["ADD"]      = 12, ["SUB"]       = 13, ["MUL"]      = 14, ["DIV"]       = 15,
+  ["MOD"]      = 16, ["POW"]       = 17, ["UNM"]      = 18, ["NOT"]       = 19,
+  ["LEN"]      = 20, ["CONCAT"]    = 21, ["JMP"]      = 22, ["EQ"]        = 23,
+  ["LT"]       = 24, ["LE"]        = 25, ["TEST"]     = 26, ["TESTSET"]   = 27,
+  ["CALL"]     = 28, ["TAILCALL"]  = 29, ["RETURN"]   = 30, ["FORLOOP"]   = 31,
+  ["FORPREP"]  = 32, ["TFORLOOP"]  = 33, ["SETLIST"]  = 34, ["CLOSE"]     = 35,
+  ["CLOSURE"]  = 36, ["VARARG"]    = 37
+}
+local opmodes = {
+  [0] = MODE_iABC,  [1]  = MODE_iABx,  [2]  = MODE_iABC,
+  [3] = MODE_iABC,  [4]  = MODE_iABC,  [5]  = MODE_iABx,
+  [6] = MODE_iABC,  [7]  = MODE_iABx,  [8]  = MODE_iABC,
+  [9] = MODE_iABC,  [10] = MODE_iABC,  [11] = MODE_iABC,
+  [12] = MODE_iABC, [13] = MODE_iABC,  [14] = MODE_iABC,
+  [15] = MODE_iABC, [16] = MODE_iABC,  [17] = MODE_iABC,
+  [18] = MODE_iABC, [19] = MODE_iABC,  [20] = MODE_iABC,
+  [21] = MODE_iABC, [22] = MODE_iAsBx, [23] = MODE_iABC,
+  [24] = MODE_iABC, [25] = MODE_iABC,  [26] = MODE_iABC,
+  [27] = MODE_iABC, [28] = MODE_iABC,  [29] = MODE_iABC,
+  [30] = MODE_iABC, [31] = MODE_iAsBx, [32] = MODE_iAsBx,
+  [33] = MODE_iABC, [34] = MODE_iABC,  [35] = MODE_iABC,
+  [36] = MODE_iABx, [37] = MODE_iABC
+}
 
 --* Compiler *--
 local Compiler = {}
@@ -637,7 +668,7 @@ function Compiler.compile(ast)
     end
 
     if nodeType == "Number" then
-      addInstruction("LOADK", expressionRegister, findOrCreateConstant(node.Value))
+      addInstruction("LOADK", expressionRegister, findOrCreateConstant(tonumber(node.Value)))
     elseif nodeType == "Global" then
       addInstruction("GETGLOBAL", expressionRegister, findOrCreateConstant(node.Value))
     elseif nodeType == "Local" then
@@ -691,12 +722,218 @@ function Compiler.compile(ast)
       processStatementNode(node)
     end
   end
+  local function processAST(ast)
+    processCodeBlock(ast)
+    addInstruction("RETURN", 0, 1, 0)
+  end
+
+  --// Bitwise operations (needed for compiling to bytecode) //--
+  local function bitNot(value)
+    local p,c=1,0
+    while value > 0 do
+        local r=value%2
+        if r<1 then c=c+p end
+        value,p=(value-r)/2, p*2
+    end
+    return c
+  end
+  local function bitXor(m, n)
+    local xr = 0
+    for p=0,31 do
+        local a = m / 2 + xr
+        local b = n / 2
+        if (a ~= math.floor(a)) and (b ~= math.floor(b)) then
+            xr = math.pow(2, p)
+        else
+            xr = 0
+        end
+        m, n = math.floor(a), math.floor(b)
+    end
+    return xr
+  end
+  local function twosComplement(value, bits)
+    if value < 0 then
+      value = value + 1
+      if value < 0 then
+        value = bitXor(bitNot(math.abs(value)), math.pow(2, bits) - 1) + 1
+      end
+    end
+    return value
+  end
+    local function makeOneByte(value)
+    return string.char(value)
+  end
+  local function makeTwoBytes(value)
+    local byte1 = value % 256
+    value = math.floor(value / 256)
+    local byte2 = value % 256
+    return string.char(byte1) .. string.char(byte2)
+  end
+  local function makeFourBytes(value)
+    local byte1 = value % 256
+    value = math.floor(value / 256)
+    local byte2 = value % 256
+    value = math.floor(value / 256)
+    local byte3 = value % 256
+    value = math.floor(value / 256)
+    local byte4 = value % 256
+    return string.char(byte1) .. string.char(byte2)
+        .. string.char(byte3) .. string.char(byte4)
+  end
+  local function makeEightBytes(value)
+    local byte1 = value % 256
+    value = math.floor(value / 256)
+    local byte2 = value % 256
+    value = math.floor(value / 256)
+    local byte3 = value % 256
+    value = math.floor(value / 256)
+    local byte4 = value % 256
+    value = math.floor(value / 256)
+    local byte5 = value % 256
+    value = math.floor(value / 256)
+    local byte6 = value % 256
+    value = math.floor(value / 256)
+    local byte7 = value % 256
+    value = math.floor(value / 256)
+    local byte8 = value % 256
+    return string.char(byte1) .. string.char(byte2)
+        .. string.char(byte3) .. string.char(byte4)
+        .. string.char(byte5) .. string.char(byte6)
+        .. string.char(byte7) .. string.char(byte8)
+  end
+  local function makeDouble(value)
+    local sign = value < 0 and 1 or 0
+    local value = math.abs(value)
+
+    local mantissa, exponent = math.frexp(value)
+    if value == 0 then -- zero
+      mantissa, exponent = 0, 0
+    elseif value == 1/0 then -- infinity
+      mantissa, exponent = 0, 2047
+    else
+      mantissa = (mantissa * 2 - 1) * math.ldexp(0.5, 53)
+      exponent = exponent + 1022
+    end
+
+    -- 52-bit mantissa
+    local double = {}
+    for i = 1, 6 do
+      table.insert(double, mantissa % 256)
+      mantissa = math.floor(mantissa / 256)
+    end
+
+    -- exponent (11 bit)
+    table.insert(double, ((mantissa % 16) + (exponent % 2^4) * 16) % 256)
+    exponent = math.floor(exponent / 2^4)
+    table.insert(double, ((sign * 128) + exponent) % 256)
+
+    return string.char(unpack(double))
+  end
+  local function makeString(value)
+    local value = value .. "\0"
+    local size = makeEightBytes(#value)
+    return size .. value
+  end
+  local function makeConstant(constantValue, constantType)
+    if constantType == "number" then
+      return makeOneByte(3) .. makeDouble(constantValue)
+    elseif constantType == "string" then
+      return makeOneByte(4) .. makeString(constantValue)
+    elseif constantType == "boolean" then
+      local secondByte = (constantValue and 1) or 0
+      return makeOneByte(1) .. makeOneByte(secondByte)
+    elseif constantType == "nil" then
+      return makeOneByte(0)
+    else
+      error("Unsupported constant type: " .. constantType)
+    end
+  end
+  local function makeInstruction(instruction)
+    local opcode = opcodeToNumberLookup[instruction[1]]
+    local a = twosComplement(instruction[2] or 0, 9)
+    local b = twosComplement(instruction[3] or 0, 9)
+    local c = twosComplement(instruction[4] or 0, 9)
+    local opmode = opmodes[opcode]
+    local mode = opmode
+    local instruction = 0
+    if opmode == MODE_iABC then
+      instruction = instruction + opcode
+      instruction = instruction + (a * 64)      -- a << 6
+      instruction = instruction + (b * 8388608) -- b << 23
+      instruction = instruction + (c * 16384)   -- c << 14
+    elseif opmode == MODE_iABx then
+      instruction = instruction + opcode
+      instruction = instruction + (a * 64)        -- a << 6
+      instruction = instruction + (b * 16384)     -- b << 14
+    elseif opmode == MODE_iAsBx then
+      instruction = instruction + opcode
+      instruction = instruction + (a * 64)               -- a << 6
+      instruction = instruction + ((b + 131071) * 16384) -- (b + 131071) << 14
+    elseif opmode == MODE_iAB then
+      instruction = instruction + opcode
+      instruction = instruction + (a * 64)    -- a << 6
+      instruction = instruction + (b * 16384) -- b << 14
+    end
+    return makeFourBytes(instruction)
+  end
+
+  local function makeConstantSection()
+    local constantSection = makeFourBytes(#constants) -- Number of constants
+    for _, constant in ipairs(constants) do
+      local constantType = type(constant)
+      constantSection = constantSection .. makeConstant(constant, constantType)
+    end
+    constantSection = constantSection .. makeFourBytes(0) -- Number of functions
+    return constantSection
+  end
+  local function makeCodeSection()
+    local codeSection = makeFourBytes(#code) -- Number of instructions
+    for _, instruction in ipairs(code) do
+      codeSection = codeSection .. makeInstruction(instruction)
+    end
+    return codeSection
+  end
+
+  local function makeFunction()
+    local functionHeader = makeString("@test.lua") -- Function name
+    functionHeader = functionHeader .. makeFourBytes(0) -- Line defined
+    functionHeader = functionHeader .. makeFourBytes(0) -- Last line defined
+    functionHeader = functionHeader .. makeOneByte(0) -- nups (Number of upvalues)
+    functionHeader = functionHeader .. makeOneByte(0) -- Number of parameters
+    functionHeader = functionHeader .. makeOneByte(2) -- Is vararg (2 = VARARG_HASARG)
+    functionHeader = functionHeader .. makeOneByte(5) -- Max stack size
+
+    functionHeader = functionHeader .. makeCodeSection()
+    functionHeader = functionHeader .. makeConstantSection()
+
+    functionHeader = functionHeader .. makeFourBytes(0) -- Line info
+    functionHeader = functionHeader .. makeFourBytes(0) -- Local variables
+    functionHeader = functionHeader .. makeFourBytes(0) -- Upvalues
+    return functionHeader
+  end
+  local function makeHeader()
+    local header = "\27Lua" -- Signature
+    header = header .. string.char(0x51)  -- Version 5.1
+    header = header .. "\0"  -- Format 0 (official)
+    header = header .. "\1"  -- Little endian
+    header = header .. "\4"  -- sizeof(int)
+    header = header .. "\8"  -- sizeof(size_t)
+    header = header .. "\4"  -- sizeof(Instruction)
+    header = header .. "\8"  -- sizeof(lua_Number)
+    header = header .. "\0"  -- Integral flag
+    return header
+  end
+
+  local function makeBytecode()
+    local header = makeHeader()
+    local functionHeader = makeFunction()
+    return header .. functionHeader
+  end
 
   --// MAIN //--
   local function compile()
-    processCodeBlock(ast)
-    return { locals, takenRegisters,
-            code,   constants }
+    processAST(ast)
+    return makeBytecode()
   end
 
   return compile()
