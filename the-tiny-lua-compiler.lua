@@ -852,23 +852,13 @@ function Compiler.compile(ast)
           numberOfImplicitKeys = numberOfImplicitKeys + 1
         end
       end
-
       addInstruction("SETLIST", expressionRegister, numberOfImplicitKeys, 1)
       deallocateRegisters(temporaryRegisters)
-
       for _, element in ipairs(elements) do
-        local value = element.Value
-        local key = element.Key
-        local implicitKey = element.ImplicitKey
-
-        if implicitKey then
-        else
-          local valueRegister = processExpressionNode(value)
-          local keyRegister = processExpressionNode(key)
-          -- Free the registers
+        if not element.ImplicitKey then
+          local valueRegister = processExpressionNode(element.Value)
+          local keyRegister = processExpressionNode(element.Key)
           deallocateRegisters({ valueRegister, keyRegister })
-
-          -- OP_SETTABLE [A, B, C]    R(A)[RK(B)] := RK(C)
           addInstruction("SETTABLE", expressionRegister, keyRegister, valueRegister)
         end
       end
