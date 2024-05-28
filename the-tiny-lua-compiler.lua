@@ -169,6 +169,9 @@ function Tokenizer.tokenize(code)
   local function isVarArg()
     return curChar == "." and lookAhead(1) == "." and lookAhead(2) == "."
   end
+  local function isComment()
+    return curChar == "-" and lookAhead(1) == "-"
+  end
   local function isString()
     return curChar == '"' or curChar == "'"
   end
@@ -218,12 +221,52 @@ function Tokenizer.tokenize(code)
     if operator then consume(#operator - 1) end
     return operator
   end
+  local function consumeShortComment()
+    while curChar ~= "\0" and curChar ~= "\n" do
+      consume()
+    end
+  end
+  local function consumeLongComment()
+    consume() -- Consumes the "[" character
+    local depth = 0
+    while curChar == "=" do
+      consume() -- Consume the "=" character
+      depth = depth + 1
+    end
+    if curChar ~= "[" then return consumeShortComment() end
+    while true do
+      if curChar == "]" then
+        consume() -- Consume the "]" character
+        local closingDepth = 0
+        while curChar == "=" do
+          consume() -- Consume the "=" character
+          closingDepth = closingDepth + 1
+        end
+        if closingDepth == depth then break end
+      elseif curChar == "\0" then
+        error("Unclosed long comment")
+      else
+        consume()
+      end
+    end
+  end
+  local function consumeComment()
+    consume() -- Consume the "-" character
+    consume() -- Consume the "-" character
+    if curChar == "[" then
+      return consumeLongComment()
+    end
+    return consumeShortComment()
+  end
 
   --// TOKENIZERS //--
   local function getNextToken()
     local curChar = curChar
     if isWhitespace(curChar) then
       consumeWhitespace()
+      return
+    elseif isComment() then
+      consumeComment()
       return
     elseif isNumberStart(curChar) then
       return { TYPE = "Number", Value = tonumber(consumeNumber()) }
