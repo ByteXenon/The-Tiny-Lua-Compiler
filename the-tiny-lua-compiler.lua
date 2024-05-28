@@ -422,6 +422,7 @@ function Parser.parse(tokens)
   end
 
   --// PARSERS //--
+  local getNextNode, parseCodeBlock
   local consumeExpression, consumeExpressions
   local function consumeIdentifierList()
     local identifiers = {}
@@ -545,6 +546,14 @@ function Parser.parse(tokens)
       elseif tokenValue == "{" then -- Table constructor
         return consumeTable()
       end
+    elseif tokenType == "Keyword" then
+      if tokenValue == "function" then
+        consume() -- Consume the "function" token
+        local parameters, isVarArg = consumeParameterList()
+        local codeblock = parseCodeBlock()
+        expectKeyword("end", true)
+        return { TYPE = "Function", Codeblock = codeblock, Parameters = parameters, IsVarArg = isVarArg }
+      end
     end
     return nil
   end
@@ -642,7 +651,6 @@ function Parser.parse(tokens)
   end
 
   --// STATEMENT PARSERS //--
-  local getNextNode, parseCodeBlock
   local function parseLocal()
     consume() -- Consume the "local" token
     if checkToken("Keyword", "function") then
