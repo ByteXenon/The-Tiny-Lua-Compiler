@@ -706,8 +706,8 @@ local COMPILER_CONDITIONAL_OPERATOR_LOOKUP = {
   ["<"]  = "LT", [">"]  = "LT",
   ["<="] = "LE", [">="] = "LE"
 }
-local COMPILER_SIMPLE_UNARY_OPERATOR_LOOKUP = {
-  ["-"] = "UNM"
+local COMPILER_UNARY_OPERATOR_LOOKUP = {
+  ["-"] = "UNM", ["#"] = "LEN", ["not"] = "NOT"
 }
 
 local COMPILER_CONTROL_FLOW_OPERATOR_LOOKUP = createLookupTable({"and", "or"})
@@ -813,7 +813,7 @@ function Compiler.compile(ast)
       end
     elseif nodeType == "UnaryOperator" then
       local nodeOperator = node.Operator
-      local operatorOpcode = COMPILER_SIMPLE_UNARY_OPERATOR_LOOKUP[nodeOperator]
+      local operatorOpcode = COMPILER_UNARY_OPERATOR_LOOKUP[nodeOperator]
       if not operatorOpcode then
         error("Unsupported unary operator: " .. tostring(nodeOperator))
       end
