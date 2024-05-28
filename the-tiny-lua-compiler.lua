@@ -354,14 +354,20 @@ function Parser.parse(tokens)
     return token and token.TYPE == "Operator" and PARSER_LUA_BINARY_OPERATORS[token.Value]
   end
 
+  --// NODE CHECKERS //--
+  local function isValidAssignmentLvalue(node)
+    local nodeType = node.TYPE
+    return nodeType == "Local" or nodeType == "Global" or nodeType == "Index"
+  end
+
   --// EXPECTORS //--
   local function expectCharacter(character, dontConsume)
-    assert(currentToken and currentToken.TYPE == "Character", "Expected a character")
+    assert(currentToken and currentToken.TYPE == "Character", "Expected a character, got: " .. (currentToken or {}).TYPE)
     assert(currentToken.Value == character, "Expected '" .. character .. "'")
     if not dontConsume then consume() end
   end
   local function expectKeyword(keyword, dontConsume)
-    assert(currentToken and currentToken.TYPE == "Keyword", "Expected a keyword")
+    assert(currentToken and currentToken.TYPE == "Keyword", "Expected a keyword, got: " .. (currentToken or {}).TYPE)
     assert(currentToken.Value == keyword, "Expected '" .. keyword .. "'")
     if not dontConsume then consume() end
   end
@@ -575,6 +581,38 @@ function Parser.parse(tokens)
     expectKeyword("end", true)
     return { TYPE = "IfStatement", Condition = condition, Codeblock = codeblock, ElseIfs = elseifs, ElseCodeblock = elseCodeblock }
   end
+  local function parseAssignment(lvalue)
+    local lvalues = { lvalue }
+    consume() -- Consume the last token of the lvalue
+    while isComma(currentToken) do
+      consume() -- Consume the comma
+      local nextLValue = parsePrefixExpression()
+      if not nextLValue then error("Expected an lvalue") end
+      if not isValidAssignmentLvalue(nextLValue) then
+        error("Expected a variable or index, got: " .. nextLValue.TYPE)
+      end
+      table.insert(lvalues, nextLValue)
+      consume() -- Consume the last token of the lvalue
+    end
+    expectCharacter("=")
+    local expressions = consumeExpressions()
+    return { TYPE = "VariableAssignment", LValues = lvalues, Expressions = expressions }
+  end
+  local function parseFunctionCallOrVariableAssignment()
+    local lvalue = parsePrefixExpression()
+    local lvalueType = lvalue.TYPE
+    if lvalue then
+      if isValidAssignmentLvalue(lvalue) then
+        return parseAssignment(lvalue)
+      elseif lvalueType == "FunctionCall" or lvalueType == "MethodCall" then
+        return lvalue
+      else
+        error("Unexpected lvalue type: " .. lvalueType)
+      end
+    end
+
+    error("Expected an lvalue, got: " .. stringifyTable(currentToken))
+  end
 
   --// CODE BLOCK PARSERS //--
   function getNextNode()
@@ -595,9 +633,9 @@ function Parser.parse(tokens)
       return node
     end
 
-    local expression = consumeExpression()
+    local node = parseFunctionCallOrVariableAssignment()
     consumeOptionalSemilcolon()
-    return expression.Value
+    return node
   end
   function parseCodeBlock()
     pushScope()
@@ -793,6 +831,30 @@ function Compiler.compile(ast)
         end
         registerVariable(localName, expressionRegister)
       end
+    elseif nodeType == "VariableAssignment" then
+      local expressionRegisters = {}
+      for index, expression in ipairs(node.Expressions) do
+        local expressionRegister = processExpressionNode(expression)
+        table.insert(expressionRegisters, expressionRegister)
+      end
+      for index, lvalue in ipairs(node.LValues) do
+        local lvalueType = lvalue.TYPE
+        if lvalueType == "Local" or lvalueType == "Global" then
+          local variableName = lvalue.Value
+          local expressionRegister = expressionRegisters[index]
+          if not expressionRegister then
+            error("Expected an expression for assignment")
+          end
+          if lvalueType == "Local" then
+            addInstruction("MOVE", locals[variableName], expressionRegister)
+          else
+            addInstruction("SETGLOBAL", expressionRegister, findOrCreateConstant(variableName))
+          end
+        else
+          error("Unsupported lvalue type: " .. lvalueType)
+        end
+      end
+      deallocateRegisters(expressionRegisters)
     else
       error("Unsupported statement node type: " .. tostring(nodeType))
     end
