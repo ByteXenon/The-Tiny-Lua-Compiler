@@ -749,7 +749,7 @@ function Compiler.compile(ast)
   local function addInstruction(opname, a, b, c)
     local instruction = { opname, a, b, c }
     table.insert(code, instruction)
-    return instruction
+    return instruction, #code
   end
   local function registerVariable(localName, register)
     locals[localName] = register
@@ -837,11 +837,40 @@ function Compiler.compile(ast)
       local conditionRegister = processExpressionNode(node.Condition)
       addInstruction("TEST", conditionRegister, 0, 0)
       local jumpInstruction = addInstruction("JMP", 0, 0) -- Placeholder
+      deallocateRegister(conditionRegister)
       local codeStart = #code
       processCodeBlock(node.Codeblock)
       local jumpBackInstruction = addInstruction("JMP", 0, loopStart - #code)
       jumpInstruction[3] = #code - codeStart
-      deallocateRegister(conditionRegister)
+    elseif nodeType == "IfStatement" then
+      local conditionCodeblockStatements = { { Condition = node.Condition, Codeblock = node.Codeblock } }
+      for _, elseifNode in ipairs(node.ElseIfs) do
+        table.insert(conditionCodeblockStatements, elseifNode)
+      end
+
+      local jumpToEndInstructions = {}
+      for index, conditionCodeblockStatement in ipairs(conditionCodeblockStatements) do
+        local condition = conditionCodeblockStatement.Condition
+        local codeBlock = conditionCodeblockStatement.Codeblock
+
+        local conditionRegister = processExpressionNode(condition)
+        addInstruction("TEST", conditionRegister, 0, 0)
+        local conditionJumpInstruction, conditionJumpInstructionIndex = addInstruction("JMP", 0, 0) -- Placeholder
+        deallocateRegister(conditionRegister)
+        processCodeBlock(codeBlock)
+        if index < #conditionCodeblockStatements or node.ElseCodeblock then
+          table.insert(jumpToEndInstructions, { addInstruction("JMP", 0, 0) })
+        end
+        conditionJumpInstruction[3] = #code - conditionJumpInstructionIndex
+      end
+      if node.ElseCodeblock then
+        processCodeBlock(node.ElseCodeblock)
+      end
+
+      for _, jumpToEndInstruction in ipairs(jumpToEndInstructions) do
+        local instructionTable, instructionIndex = jumpToEndInstruction[1], jumpToEndInstruction[2]
+        instructionTable[3] = #code - instructionIndex
+      end
     elseif nodeType == "VariableAssignment" then
       local expressionRegisters = {}
       for index, expression in ipairs(node.Expressions) do
