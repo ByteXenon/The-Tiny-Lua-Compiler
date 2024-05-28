@@ -391,6 +391,13 @@ function Parser.parse(tokens)
     local indexToken = { TYPE = "String", Value = currentToken.Value }
     return { TYPE = "TableIndex", Index = indexToken, Expression = currentExpression }
   end
+  local function consumeBracketTableIndex(currentExpression)
+    consume() -- Consume the "[" symbol
+    local indexExpression = consumeExpression()
+    consume() -- Consume the last token of the index expression
+    expectCharacter("]")
+    return { TYPE = "TableIndex", Index = indexExpression, Expression = currentExpression }
+  end
   local function parseFunctionCall(currentExpression)
     consume() -- Consume the "("
     local arguments = consumeExpressions()
@@ -441,6 +448,10 @@ function Parser.parse(tokens)
       consume()
       -- <expression> \. <identifier>
       return consumeTableIndex(primaryExpression)
+    elseif nextTokenValue == "[" then -- Table index
+      consume()
+      -- <expression> \[ <expression> \]
+      return consumeBracketTableIndex(primaryExpression)
     end
     return nil
   end
@@ -779,6 +790,11 @@ function Compiler.compile(ast)
       else
         addInstruction("LOADNIL", expressionRegister, expressionRegister)
       end
+    elseif nodeType == "TableIndex" then
+      local indexRegister = processExpressionNode(node.Index)
+      processExpressionNode(node.Expression, expressionRegister)
+      addInstruction("GETTABLE", expressionRegister, expressionRegister, indexRegister)
+      deallocateRegister(indexRegister)
     elseif nodeType == "Global" then
       addInstruction("GETGLOBAL", expressionRegister, findOrCreateConstant(node.Value))
     elseif nodeType == "Local" then
