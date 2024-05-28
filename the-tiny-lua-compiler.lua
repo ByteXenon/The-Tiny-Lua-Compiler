@@ -859,6 +859,15 @@ function Compiler.compile(ast)
       processCodeBlock(node.Codeblock)
       local jumpBackInstruction = addInstruction("JMP", 0, loopStart - #code)
       jumpInstruction[3] = #code - codeStart
+    elseif nodeType == "RepeatLoop" then
+      local loopStart = #code
+      processCodeBlock(node.Codeblock)
+      local conditionRegister = processExpressionNode(node.Condition)
+      addInstruction("TEST", conditionRegister, 0, 0)
+      local jumpInstruction = addInstruction("JMP", 0, loopStart - #code - 1)
+      deallocateRegister(conditionRegister)
+    elseif nodeType == "DoBlock" then
+      processCodeBlock(node.Codeblock)
     elseif nodeType == "IfStatement" then
       local conditionCodeblockStatements = { { Condition = node.Condition, Codeblock = node.Codeblock } }
       for _, elseifNode in ipairs(node.ElseIfs) do
