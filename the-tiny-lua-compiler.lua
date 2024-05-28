@@ -229,7 +229,9 @@ function Tokenizer.tokenize(code)
       return { TYPE = "Number", Value = tonumber(consumeNumber()) }
     elseif isIdentifierStart(curChar) then
       local identifier = consumeIdentifier()
-      if TOKENIZER_RESERVED_KEYWORDS_LOOKUP[identifier] then
+      if TOKENIZER_LUA_OPERATORS_LOOKUP[identifier] then
+        return { TYPE = "Operator", Value = identifier }
+      elseif TOKENIZER_RESERVED_KEYWORDS_LOOKUP[identifier] then
         return { TYPE = "Keyword", Value = identifier }
       elseif TOKENIZER_LUA_CONSTANTS_LOOKUP[identifier] then
         return { TYPE = "Constant", Value = identifier }
@@ -694,6 +696,7 @@ local COMPILER_OPMODES = {
   [33] = MODE_iABC, [34] = MODE_iABC,  [35] = MODE_iABC,
   [36] = MODE_iABx, [37] = MODE_iABC
 }
+
 local COMPILER_SIMPLE_ARICHMETIC_OPERATOR_LOOKUP = {
   ["+"] = "ADD", ["-"] = "SUB", ["*"] = "MUL", ["/"] = "DIV",
   ["%"] = "MOD", ["^"] = "POW"
@@ -706,6 +709,8 @@ local COMPILER_CONDITIONAL_OPERATOR_LOOKUP = {
 local COMPILER_SIMPLE_UNARY_OPERATOR_LOOKUP = {
   ["-"] = "UNM"
 }
+
+local COMPILER_CONTROL_FLOW_OPERATOR_LOOKUP = createLookupTable({"and", "or"})
 local NEGATIVE_CONDITIONAL_OPERATOR_LOOKUP = createLookupTable({"~=", ">", ">="})
 
 --* Compiler *--
@@ -773,20 +778,32 @@ function Compiler.compile(ast)
       addInstruction("MOVE", expressionRegister, locals[node.Value])
     elseif nodeType == "BinaryOperator" then
       local nodeOperator = node.Operator
-      local leftExpressionRegister = processExpressionNode(node.Left)
-      local rightExpressionRegister = processExpressionNode(node.Right)
-      local opcode = COMPILER_SIMPLE_ARICHMETIC_OPERATOR_LOOKUP[nodeOperator] or COMPILER_CONDITIONAL_OPERATOR_LOOKUP[nodeOperator]
+      local opcode = COMPILER_SIMPLE_ARICHMETIC_OPERATOR_LOOKUP[nodeOperator]
+                     or COMPILER_CONDITIONAL_OPERATOR_LOOKUP[nodeOperator]
+                     or COMPILER_CONTROL_FLOW_OPERATOR_LOOKUP[nodeOperator]
       if not opcode then error("Unsupported binary operator: " .. tostring(nodeOperator)) end
       if COMPILER_SIMPLE_ARICHMETIC_OPERATOR_LOOKUP[nodeOperator] then
+        local leftExpressionRegister = processExpressionNode(node.Left)
+        local rightExpressionRegister = processExpressionNode(node.Right)
         addInstruction(opcode, expressionRegister, leftExpressionRegister, rightExpressionRegister)
+        deallocateRegisters({ leftExpressionRegister, rightExpressionRegister })
+      elseif COMPILER_CONTROL_FLOW_OPERATOR_LOOKUP[nodeOperator] then
+        local leftExpressionRegister = processExpressionNode(node.Left, expressionRegister)
+        local isConditionTrue = (nodeOperator == "and" and 0) or 1
+        addInstruction("TEST", leftExpressionRegister, 0, isConditionTrue)
+        local jumpInstruction, jumpInstructionIndex = addInstruction("JMP", 0, 0) -- Placeholder
+        processExpressionNode(node.Right, expressionRegister)
+        jumpInstruction[3] = #code - jumpInstructionIndex
       else
+        local leftExpressionRegister = processExpressionNode(node.Left)
+        local rightExpressionRegister = processExpressionNode(node.Right)
         local isConditionTrue = (NEGATIVE_CONDITIONAL_OPERATOR_LOOKUP[nodeOperator] and 0) or 1
         addInstruction(opcode, isConditionTrue, leftExpressionRegister, rightExpressionRegister)
         addInstruction("JMP", 0, 1)
         addInstruction("LOADBOOL", expressionRegister, 0, 1)
         addInstruction("LOADBOOL", expressionRegister, 1, 0)
+        deallocateRegisters({ leftExpressionRegister, rightExpressionRegister })
       end
-      deallocateRegisters({ leftExpressionRegister, rightExpressionRegister })
     elseif nodeType == "UnaryOperator" then
       local nodeOperator = node.Operator
       local operatorOpcode = COMPILER_SIMPLE_UNARY_OPERATOR_LOOKUP[nodeOperator]
