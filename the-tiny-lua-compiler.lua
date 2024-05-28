@@ -406,6 +406,10 @@ function Parser.parse(tokens)
   end
 
   --// EXPECTORS //--
+  local function expectTokenType(tokenType, dontConsume)
+    assert(currentToken and currentToken.TYPE == tokenType, "Expected a " .. tokenType .. ", got: " .. (currentToken or {}).TYPE)
+    if not dontConsume then consume() end
+  end
   local function expectCharacter(character, dontConsume)
     assert(currentToken and currentToken.TYPE == "Character", "Expected a character, got: " .. (currentToken or {}).TYPE)
     assert(currentToken.Value == character, "Expected '" .. character .. "'")
@@ -423,11 +427,29 @@ function Parser.parse(tokens)
     local identifiers = {}
     while currentToken.TYPE == "Identifier" do
       table.insert(identifiers, currentToken.Value)
-      if isComma(lookAhead()) then
-        consume() -- Consume the comma
-      else break end
+      if not isComma(lookAhead()) then break end
+      consume() -- Consume identifier
+      consume() -- Consume comma
     end
     return identifiers
+  end
+  local function consumeParameterList()
+    expectCharacter("(")
+    local parameters, isVarArg = {}, false
+    while not checkToken("Character", ")") do
+      if currentToken.TYPE == "Identifier" then
+        table.insert(parameters, currentToken.Value)
+      elseif currentToken.TYPE == "VarArg" then
+        isVarArg = true
+        consume() -- Consume the "..."
+        break
+      end
+      consume() -- Consume the last token of the parameter
+      if not isComma(currentToken) then break end
+      consume() -- Consume the comma
+    end
+    expectCharacter(")")
+    return parameters, isVarArg
   end
   local function consumeTableIndex(currentExpression)
     consume() -- Consume the "." symbol
@@ -623,11 +645,21 @@ function Parser.parse(tokens)
   local getNextNode, parseCodeBlock
   local function parseLocal()
     consume() -- Consume the "local" token
+    if checkToken("Keyword", "function") then
+      consume() -- Consume the "function" token
+      local name = currentToken.Value
+      consume() -- Consume the last token of the identifier)
+      local parameters, isVarArg = consumeParameterList()
+      declareLocalVariable(name)
+      local codeblock = parseCodeBlock()
+      expectKeyword("end", true)
+      return { TYPE = "LocalFunctionDeclaration", Name = name, Codeblock = codeblock, Parameters = parameters, IsVarArg = isVarArg }
+    end
     local variables = consumeIdentifierList()
-    declareLocalVariables(variables)
     consume() -- Consume the last token of the last identifier
     expectCharacter("=")
     local expressions = consumeExpressions()
+    declareLocalVariables(variables)
     return { TYPE = "LocalDeclaration", Variables = variables, Expressions = expressions }
   end
   local function parseWhile()
