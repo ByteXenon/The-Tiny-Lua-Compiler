@@ -856,6 +856,15 @@ function Compiler.compile(ast)
         end
         registerVariable(localName, expressionRegister)
       end
+    elseif nodeType == "ReturnStatement" then
+      local expressionRegisters = {}
+      for index, expression in ipairs(node.Expressions) do
+        local expressionRegister = processExpressionNode(expression)
+        table.insert(expressionRegisters, expressionRegister)
+      end
+      local startRegister = expressionRegisters[1] or 0
+      addInstruction("RETURN", startRegister, #node.Expressions + 1, 0)
+      deallocateRegisters(expressionRegisters)
     elseif nodeType == "WhileLoop" then
       local loopStart = #code
       local conditionRegister = processExpressionNode(node.Condition)
