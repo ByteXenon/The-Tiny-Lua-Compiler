@@ -956,7 +956,7 @@ function Compiler.compile(ast)
       deallocateRegister(conditionRegister)
       local codeStart = #code
       processCodeBlock(node.Codeblock)
-      local jumpBackInstruction = addInstruction("JMP", 0, loopStart - #code)
+      local jumpBackInstruction = addInstruction("JMP", 0, loopStart - #code - 1)
       jumpInstruction[3] = #code - codeStart
     elseif nodeType == "RepeatLoop" then
       local loopStart = #code
