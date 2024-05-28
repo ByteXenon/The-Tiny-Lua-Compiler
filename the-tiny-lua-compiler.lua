@@ -756,7 +756,8 @@ function Compiler.compile(ast)
   end
 
   --// CODE GENERATION //--
-  local function processExpressionNode(node, expressionRegister)
+  local processExpressionNode, processStatementNode, processCodeBlock, processAST
+  function processExpressionNode(node, expressionRegister)
     local expressionRegister = expressionRegister or allocateRegister()
     local nodeType = node.TYPE
     while nodeType == "Expression" do
@@ -801,7 +802,7 @@ function Compiler.compile(ast)
 
     return expressionRegister
   end
-  local function processStatementNode(node)
+  function processStatementNode(node)
     local nodeType = node.TYPE
     if nodeType == "FunctionCall" then
       local expressionRegister = processExpressionNode(node.Expression)
@@ -831,6 +832,16 @@ function Compiler.compile(ast)
         end
         registerVariable(localName, expressionRegister)
       end
+    elseif nodeType == "WhileLoop" then
+      local loopStart = #code
+      local conditionRegister = processExpressionNode(node.Condition)
+      addInstruction("TEST", conditionRegister, 0, 0)
+      local jumpInstruction = addInstruction("JMP", 0, 0) -- Placeholder
+      local codeStart = #code
+      processCodeBlock(node.Codeblock)
+      local jumpBackInstruction = addInstruction("JMP", 0, loopStart - #code)
+      jumpInstruction[3] = #code - codeStart
+      deallocateRegister(conditionRegister)
     elseif nodeType == "VariableAssignment" then
       local expressionRegisters = {}
       for index, expression in ipairs(node.Expressions) do
@@ -859,18 +870,19 @@ function Compiler.compile(ast)
       error("Unsupported statement node type: " .. tostring(nodeType))
     end
   end
-  local function processCodeBlock(list)
+  function processCodeBlock(list)
     for index, node in ipairs(list) do
       processStatementNode(node)
     end
   end
-  local function processAST(ast)
+  function processAST(ast)
     processCodeBlock(ast)
     addInstruction("RETURN", 0, 1, 0)
   end
 
   --// Bitwise operations (needed for compiling to bytecode) //--
-  local function twosComplement(value, bits)
+  local function twosComplement(value)
+    local value = value or 0
     if value < 0 then
       value = (-value) - 1
     end
@@ -950,27 +962,31 @@ function Compiler.compile(ast)
   end
   local function makeInstruction(instruction)
     local opcode = COMPILER_OPCODE_TO_NUMBER_LOOKUP[instruction[1]]
-    local a = twosComplement(instruction[2] or 0, 9)
-    local b = twosComplement(instruction[3] or 0, 9)
-    local c = twosComplement(instruction[4] or 0, 9)
     local opmode = COMPILER_OPMODES[opcode]
     local mode = opmode
-    local instruction = 0
+    local instructionNumber = 0
     if opmode == MODE_iABC then
-      instruction = instruction + opcode
-      instruction = instruction + (a * 64) -- a << 6
-      instruction = instruction + (b * 8388608) -- b << 23
-      instruction = instruction + (c * 16384) -- c << 14
+      local a = twosComplement(instruction[2])
+      local b = twosComplement(instruction[3])
+      local c = twosComplement(instruction[4])
+      instructionNumber = instructionNumber + opcode
+      instructionNumber = instructionNumber + (a * 64) -- a << 6
+      instructionNumber = instructionNumber + (b * 8388608) -- b << 23
+      instructionNumber = instructionNumber + (c * 16384) -- c << 14
     elseif opmode == MODE_iABx then
-      instruction = instruction + opcode
-      instruction = instruction + (a * 64) -- a << 6
-      instruction = instruction + (b * 16384) -- b << 14
+      local a = twosComplement(instruction[2])
+      local b = twosComplement(instruction[3])
+      instructionNumber = instructionNumber + opcode
+      instructionNumber = instructionNumber + (a * 64) -- a << 6
+      instructionNumber = instructionNumber + (b * 16384) -- b << 14
     elseif opmode == MODE_iAsBx then
-      instruction = instruction + opcode
-      instruction = instruction + (a * 64) -- a << 6
-      instruction = instruction + ((b + 131071) * 16384) -- (b + 131071) << 14
+      local a = twosComplement(instruction[2])
+      local b = instruction[3]
+      instructionNumber = instructionNumber + opcode
+      instructionNumber = instructionNumber + (a * 64) -- a << 6
+      instructionNumber = instructionNumber + ((b + 131071) * 16384) -- (b + 131071) << 14
     end
-    return makeFourBytes(instruction)
+    return makeFourBytes(instructionNumber)
   end
   local function makeConstantSection()
     local constantSection = makeFourBytes(#constants) -- Number of constants
