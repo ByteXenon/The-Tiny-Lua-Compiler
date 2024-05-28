@@ -772,6 +772,13 @@ function Compiler.compile(ast)
 
     if nodeType == "Number" or nodeType == "String" then
       addInstruction("LOADK", expressionRegister, findOrCreateConstant(node.Value))
+    elseif nodeType == "Constant" then
+      local nodeValue = node.Value
+      if nodeValue ~= "nil" then
+        addInstruction("LOADBOOL", expressionRegister, nodeValue == "true" and 1 or 0, 0)
+      else
+        addInstruction("LOADNIL", expressionRegister, expressionRegister)
+      end
     elseif nodeType == "Global" then
       addInstruction("GETGLOBAL", expressionRegister, findOrCreateConstant(node.Value))
     elseif nodeType == "Local" then
