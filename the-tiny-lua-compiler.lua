@@ -391,6 +391,50 @@ function Parser.parse(tokens)
     local indexToken = { TYPE = "String", Value = currentToken.Value }
     return { TYPE = "TableIndex", Index = indexToken, Expression = currentExpression }
   end
+  local function consumeTable()
+    consume() -- Consume the "{" symbol
+    local elements = {}
+    local internalImplicitKey = 1
+
+    -- Consume table elements
+    while not checkToken("Character", "}") do
+      local key, value
+      local isImplicitKey = false
+
+      -- [<expression>] = <expression>
+      if checkToken("Character", "[") then
+        consume() -- Consume "["
+        key = consumeExpression()
+        consume() -- Consume the last token of the key
+        expectCharacter("]")
+        expectCharacter("=")
+        value = consumeExpression()
+
+      -- <identifier> = <expression>
+      elseif currentToken.TYPE == "Identifier" and checkToken("Character", "=", lookAhead()) then
+        key = { TYPE = "String", Value = currentToken.Value }
+        consume() -- Consume key
+        consume() -- Consume "="
+        value = consumeExpression()
+
+      -- <expression>
+      else
+        key = { TYPE = "Number", Value = internalImplicitKey }
+        internalImplicitKey = internalImplicitKey + 1
+        isImplicitKey = true
+        value = consumeExpression()
+      end
+      table.insert(elements, { TYPE = "TableElement", Key = key, Value = value, IsImplicitKey = isImplicitKey })
+
+      consume() -- Consume the last token of the expression
+      local shouldContinue = (currentToken.TYPE == "Character") and
+                              (currentToken.Value == "," or currentToken.Value == ";")
+      if not shouldContinue then break end
+      consume() -- Consume "," or ";"
+    end
+
+    return { TYPE = "Table", Elements = elements }
+  end
   local function consumeBracketTableIndex(currentExpression)
     consume() -- Consume the "[" symbol
     local indexExpression = consumeExpression()
@@ -433,6 +477,8 @@ function Parser.parse(tokens)
         local expression = consumeExpression()
         consume() -- Consume the last token of the expression
         return expression
+      elseif tokenValue == "{" then -- Table constructor
+        return consumeTable()
       end
     end
     return nil
@@ -795,6 +841,37 @@ function Compiler.compile(ast)
       processExpressionNode(node.Expression, expressionRegister)
       addInstruction("GETTABLE", expressionRegister, expressionRegister, indexRegister)
       deallocateRegister(indexRegister)
+    elseif nodeType == "Table" then
+      local elements = node.Elements
+      addInstruction("NEWTABLE", expressionRegister, 0, 0)
+      local temporaryRegisters = {}
+      local numberOfImplicitKeys = 0
+      for _, element in ipairs(elements) do
+        if element.ImplicitKey then
+          table.insert(temporaryRegisters, processExpressionNode(element.Value))
+          numberOfImplicitKeys = numberOfImplicitKeys + 1
+        end
+      end
+
+      addInstruction("SETLIST", expressionRegister, numberOfImplicitKeys, 1)
+      deallocateRegisters(temporaryRegisters)
+
+      for _, element in ipairs(elements) do
+        local value = element.Value
+        local key = element.Key
+        local implicitKey = element.ImplicitKey
+
+        if implicitKey then
+        else
+          local valueRegister = processExpressionNode(value)
+          local keyRegister = processExpressionNode(key)
+          -- Free the registers
+          deallocateRegisters({ valueRegister, keyRegister })
+
+          -- OP_SETTABLE [A, B, C]    R(A)[RK(B)] := RK(C)
+          addInstruction("SETTABLE", expressionRegister, keyRegister, valueRegister)
+        end
+      end
     elseif nodeType == "Global" then
       addInstruction("GETGLOBAL", expressionRegister, findOrCreateConstant(node.Value))
     elseif nodeType == "Local" then
