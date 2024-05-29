@@ -1092,9 +1092,7 @@ function Compiler.compile(ast)
         if lvalueType == "Local" or lvalueType == "Global" then
           local variableName = lvalue.Value
           local expressionRegister = expressionRegisters[index]
-          if not expressionRegister then
-            error("Expected an expression for assignment")
-          end
+          if not expressionRegister then error("Expected an expression for assignment") end
           if lvalueType == "Local" then
             addInstruction("MOVE", locals[variableName], expressionRegister)
           else
@@ -1104,6 +1102,7 @@ function Compiler.compile(ast)
           local indexRegister = processExpressionNode(lvalue.Index)
           local tableExpressionRegister = processExpressionNode(lvalue.Expression)
           local expressionRegister = expressionRegisters[index]
+          if not expressionRegister then error("Expected an expression for assignment") end
           addInstruction("SETTABLE", tableExpressionRegister, indexRegister, expressionRegister)
           deallocateRegisters({ indexRegister, expressionRegister, tableExpressionRegister })
         else
