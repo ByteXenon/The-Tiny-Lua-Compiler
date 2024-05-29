@@ -1100,6 +1100,12 @@ function Compiler.compile(ast)
           else
             addInstruction("SETGLOBAL", expressionRegister, findOrCreateConstant(variableName))
           end
+        elseif lvalueType == "TableIndex" then
+          local indexRegister = processExpressionNode(lvalue.Index)
+          local tableExpressionRegister = processExpressionNode(lvalue.Expression)
+          local expressionRegister = expressionRegisters[index]
+          addInstruction("SETTABLE", tableExpressionRegister, indexRegister, expressionRegister)
+          deallocateRegisters({ indexRegister, expressionRegister, tableExpressionRegister })
         else
           error("Unsupported lvalue type: " .. lvalueType)
         end
