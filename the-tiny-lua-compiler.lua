@@ -402,7 +402,7 @@ function Parser.parse(tokens)
   --// NODE CHECKERS //--
   local function isValidAssignmentLvalue(node)
     local nodeType = node.TYPE
-    return nodeType == "Local" or nodeType == "Global" or nodeType == "Index"
+    return nodeType == "Local" or nodeType == "Global" or nodeType == "TableIndex"
   end
 
   --// EXPECTORS //--
@@ -457,6 +457,13 @@ function Parser.parse(tokens)
     local indexToken = { TYPE = "String", Value = currentToken.Value }
     return { TYPE = "TableIndex", Index = indexToken, Expression = currentExpression }
   end
+  local function consumeBracketTableIndex(currentExpression)
+    consume() -- Consume the "[" symbol
+    local indexExpression = consumeExpression()
+    consume() -- Consume the last token of the index expression
+    expectCharacter("]", true)
+    return { TYPE = "TableIndex", Index = indexExpression, Expression = currentExpression }
+  end
   local function consumeTable()
     consume() -- Consume the "{" symbol
     local elements = {}
@@ -499,13 +506,6 @@ function Parser.parse(tokens)
     end
 
     return { TYPE = "Table", Elements = elements }
-  end
-  local function consumeBracketTableIndex(currentExpression)
-    consume() -- Consume the "[" symbol
-    local indexExpression = consumeExpression()
-    consume() -- Consume the last token of the index expression
-    expectCharacter("]")
-    return { TYPE = "TableIndex", Index = indexExpression, Expression = currentExpression }
   end
   local function parseFunctionCall(currentExpression)
     consume() -- Consume the "("
