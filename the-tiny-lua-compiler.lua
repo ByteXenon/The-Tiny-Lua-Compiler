@@ -722,6 +722,19 @@ function Parser.parse(tokens)
     expectKeyword("end", true)
     return { TYPE = "IfStatement", Condition = condition, Codeblock = codeblock, ElseIfs = elseifs, ElseCodeblock = elseCodeblock }
   end
+  local function parseFor()
+    consume() -- Consume the "for" token
+    expectTokenType("Identifier", true)
+    local variableName = currentToken.Value
+    consume() -- Consume the variable name
+    expectCharacter("=")
+    local expressions = consumeExpressions()
+    consume() -- Consume the last token of the expressions
+    expectKeyword("do")
+    local codeblock = parseCodeBlock({ variableName })
+    expectKeyword("end", true)
+    return { TYPE = "NumericForLoop", VariableName = variableName, Expressions = expressions, Codeblock = codeblock }
+  end
   local function parseAssignment(lvalue)
     local lvalues = { lvalue }
     consume() -- Consume the last token of the lvalue
@@ -769,6 +782,7 @@ function Parser.parse(tokens)
       elseif currentTokenValue == "return"       then node = parseReturn()
       elseif currentTokenValue == "break"        then node = parseBreak()
       elseif currentTokenValue == "if"           then node = parseIf()
+      elseif currentTokenValue == "for"          then node = parseFor()
       else error("Unsupported keyword: " .. currentTokenValue) end
       consumeOptionalSemilcolon()
       return node
