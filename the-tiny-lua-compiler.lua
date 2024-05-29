@@ -550,7 +550,7 @@ function Parser.parse(tokens)
       if tokenValue == "function" then
         consume() -- Consume the "function" token
         local parameters, isVarArg = consumeParameterList()
-        local codeblock = parseCodeBlock()
+        local codeblock = parseCodeBlock(parameters)
         expectKeyword("end", true)
         return { TYPE = "Function", Codeblock = codeblock, Parameters = parameters, IsVarArg = isVarArg }
       end
@@ -659,7 +659,7 @@ function Parser.parse(tokens)
       consume() -- Consume the last token of the identifier)
       local parameters, isVarArg = consumeParameterList()
       declareLocalVariable(name)
-      local codeblock = parseCodeBlock()
+      local codeblock = parseCodeBlock(parameters)
       expectKeyword("end", true)
       return { TYPE = "LocalFunctionDeclaration", Name = name, Codeblock = codeblock, Parameters = parameters, IsVarArg = isVarArg }
     end
@@ -779,8 +779,11 @@ function Parser.parse(tokens)
     consumeOptionalSemilcolon()
     return node
   end
-  function parseCodeBlock()
+  function parseCodeBlock(variablesInCodeblock)
     pushScope()
+    if variablesInCodeblock then
+      declareLocalVariables(variablesInCodeblock)
+    end
     local nodeList = { TYPE = "Group" }
     while currentToken do
       local node = getNextNode()
