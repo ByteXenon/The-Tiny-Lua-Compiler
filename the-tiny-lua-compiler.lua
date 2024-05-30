@@ -409,7 +409,7 @@ function Parser.parse(tokens)
   --// NODE CHECKERS //--
   local function isValidAssignmentLvalue(node)
     local nodeType = node.TYPE
-    return nodeType == "Local" or nodeType == "Global" or nodeType == "TableIndex"
+    return nodeType == "Variable" or nodeType == "TableIndex"
   end
 
   --// EXPECTORS //--
@@ -557,7 +557,7 @@ function Parser.parse(tokens)
       return currentToken
     elseif tokenType == "Identifier" then
       local variableType = getVariableType(tokenValue)
-      local variableNode = { TYPE = variableType, Value = tokenValue }
+      local variableNode = { TYPE = "Variable", Value = tokenValue, VariableType = variableType }
       return variableNode
     elseif tokenType == "Character" then
       if tokenValue == "(" then -- Parenthesized expression
@@ -1002,10 +1002,13 @@ function Compiler.compile(ast)
           addInstruction("SETTABLE", expressionRegister, keyRegister, valueRegister)
         end
       end
-    elseif nodeType == "Global" then
-      addInstruction("GETGLOBAL", expressionRegister, findOrCreateConstant(node.Value))
-    elseif nodeType == "Local" then
-      addInstruction("MOVE", expressionRegister, locals[node.Value])
+    elseif nodeType == "Variable" then
+      local variableType = node.VariableType
+      if variableType == "Global" then
+        addInstruction("GETGLOBAL", expressionRegister, findOrCreateConstant(node.Value))
+      elseif variableType == "Local" then
+        addInstruction("MOVE", expressionRegister, locals[node.Value])
+      end
     elseif nodeType == "BinaryOperator" then
       local nodeOperator = node.Operator
       local opcode = COMPILER_SIMPLE_ARICHMETIC_OPERATOR_LOOKUP[nodeOperator]
@@ -1137,13 +1140,14 @@ function Compiler.compile(ast)
       end
       for index, lvalue in ipairs(node.LValues) do
         local lvalueType = lvalue.TYPE
-        if lvalueType == "Local" or lvalueType == "Global" then
+        if lvalueType == "Variable" then
+          local variableType = lvalue.VariableType
           local variableName = lvalue.Value
           local expressionRegister = expressionRegisters[index]
           if not expressionRegister then error("Expected an expression for assignment") end
-          if lvalueType == "Local" then
+          if variableType == "Local" then
             addInstruction("MOVE", locals[variableName], expressionRegister)
-          else
+          elseif variableType == "Global" then
             addInstruction("SETGLOBAL", expressionRegister, findOrCreateConstant(variableName))
           end
         elseif lvalueType == "TableIndex" then
