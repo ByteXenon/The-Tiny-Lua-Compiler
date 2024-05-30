@@ -945,6 +945,23 @@ function Compiler.compile(ast)
 
     if nodeType == "Number" or nodeType == "String" then
       addInstruction("LOADK", expressionRegister, findOrCreateConstant(node.Value))
+    elseif nodeType == "FunctionCall" then
+      processExpressionNode(node.Expression, expressionRegister)
+      local argumentRegisters = {}
+      for index, argument in ipairs(node.Arguments) do
+        argumentRegisters[index] = processExpressionNode(argument)
+      end
+      local returnAmount = node.ReturnValueAmount + 1
+      local argumentAmount = #node.Arguments + 1
+      if returnAmount <= 0 then returnAmount = 0 end
+      if node.Arguments[#node.Arguments] then
+        local lastArgument = node.Arguments[#node.Arguments]
+        if lastArgument.TYPE == "FunctionCall" or lastArgument.TYPE == "VarArg" then
+          argumentAmount = 0
+        end
+      end
+      addInstruction("CALL", expressionRegister, argumentAmount, returnAmount)
+      deallocateRegisters(argumentRegisters)
     elseif nodeType == "Constant" then
       local nodeValue = node.Value
       if nodeValue ~= "nil" then
@@ -1028,14 +1045,7 @@ function Compiler.compile(ast)
   function processStatementNode(node)
     local nodeType = node.TYPE
     if nodeType == "FunctionCall" then
-      local expressionRegister = processExpressionNode(node.Expression)
-      local argumentRegisters = {}
-      for index, argument in ipairs(node.Arguments) do
-        argumentRegisters[index] = processExpressionNode(argument)
-      end
-      addInstruction("CALL", expressionRegister, #node.Arguments + 1, 1)
-      deallocateRegister(expressionRegister)
-      deallocateRegisters(argumentRegisters)
+      processExpressionNode(node)
     elseif nodeType == "LocalDeclaration" then
       local expressionRegisters = {}
       for index, expression in ipairs(node.Expressions) do
