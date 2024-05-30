@@ -776,13 +776,13 @@ function Parser.parse(tokens)
       if isValidAssignmentLvalue(lvalue) then
         return parseAssignment(lvalue)
       elseif lvalueType == "FunctionCall" or lvalueType == "MethodCall" then
+        lvalue.ReturnValueAmount = 0
         return lvalue
       else
         error("Unexpected lvalue type: " .. lvalueType)
       end
     end
-
-    error("Expected an lvalue, got: " .. stringifyTable(currentToken))
+    error("Expected an lvalue, got: " .. (lvalue or {}).TYPE)
   end
 
   --// CODE BLOCK PARSERS //--
