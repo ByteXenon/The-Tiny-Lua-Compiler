@@ -421,9 +421,24 @@ function Parser.parse(tokens)
     if not dontConsume then consume() end
   end
 
-  --// PARSERS //--
+  --// AUXILIARY FUNCTIONS //--
   local getNextNode, parseCodeBlock
   local consumeExpression, consumeExpressions
+  local function adjustMultiretNodes(nodeList, expectedReturnAmount)
+    local lastNode = nodeList[#nodeList]
+    local extra = expectedReturnAmount - #nodeList
+    if lastNode and (lastNode.TYPE == "Vararg" or lastNode.TYPE == "FunctionCall") then
+      extra = extra + 1
+      if extra < 0 then extra = -1 end
+      lastNode.ReturnValueAmount = extra
+    else
+      for _ = 1, extra do
+        table.insert(nodeList, { TYPE = "Constant", Value = "nil" })
+      end
+    end
+  end
+
+  --// PARSERS //--
   local function consumeIdentifierList()
     local identifiers = {}
     while currentToken.TYPE == "Identifier" do
@@ -510,8 +525,9 @@ function Parser.parse(tokens)
   local function parseFunctionCall(currentExpression)
     consume() -- Consume the "("
     local arguments = consumeExpressions()
+    adjustMultiretNodes(arguments, -1)
     consume() -- Consume the last token of the expression
-    return { TYPE = "FunctionCall", Expression = currentExpression, Arguments = arguments }
+    return { TYPE = "FunctionCall", Expression = currentExpression, Arguments = arguments, ReturnValueAmount = 1 }
   end
   local function consumeOptionalSemilcolon()
     local nextToken = lookAhead()
@@ -626,22 +642,23 @@ function Parser.parse(tokens)
     end
     return expression
   end
-  function consumeExpression()
+  function consumeExpression(returnRawNode)
     local expression = parseBinaryExpression(0)
     if not expression then
       consume(-1)
       return
     end
+    if returnRawNode then return expression end
     return { TYPE = "Expression", Value = expression }
   end
   function consumeExpressions()
-    local expressions = { consumeExpression() }
+    local expressions = { consumeExpression(true) }
     if #expressions == 0 then return {} end
 
     local nextToken = lookAhead()
     while isComma(nextToken) do
       consume(2) -- Consume the last token of the last expression and ","
-      local expression = consumeExpression()
+      local expression = consumeExpression(true)
       table.insert(expressions, expression)
       nextToken = lookAhead()
     end
