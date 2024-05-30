@@ -350,7 +350,7 @@ function Parser.parse(tokens)
   end
 
   --// SCOPE MANAGEMENT //--
-  local function pushScope(isFunctionScope)
+  local function enterScope(isFunctionScope)
     local scope = {
       localVariables = {},
       isFunctionScope = (isFunctionScope or false)
@@ -359,7 +359,7 @@ function Parser.parse(tokens)
     currentScope = scope
     return scope
   end
-  local function popScope()
+  local function exitScope()
     scopeStack[#scopeStack] = nil
     currentScope = scopeStack[#scopeStack]
   end
@@ -817,7 +817,7 @@ function Parser.parse(tokens)
     return node
   end
   function parseCodeBlock(variablesInCodeblock)
-    pushScope()
+    enterScope()
     if variablesInCodeblock then
       declareLocalVariables(variablesInCodeblock)
     end
@@ -828,7 +828,7 @@ function Parser.parse(tokens)
       table.insert(nodeList, node)
       consume()
     end
-    popScope()
+    exitScope()
     return nodeList
   end
 
