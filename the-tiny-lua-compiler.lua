@@ -350,9 +350,10 @@ function Parser.parse(tokens)
   end
 
   --// SCOPE MANAGEMENT //--
-  local function pushScope()
+  local function pushScope(isFunctionScope)
     local scope = {
-      localVariables = {}
+      localVariables = {},
+      isFunctionScope = (isFunctionScope or false)
     }
     table.insert(scopeStack, scope)
     currentScope = scope
@@ -373,10 +374,16 @@ function Parser.parse(tokens)
     end
   end
   local function getVariableType(variableName)
+    local isUpvalue = false
     for scopeIndex = #scopeStack, 1, -1 do
       local scope = scopeStack[scopeIndex]
       if scope.localVariables[variableName] then
+        if isUpvalue then
+          return "Upvalue", scopeIndex
+        end
         return "Local", scopeIndex
+      elseif scope.isFunctionScope then
+        isUpvalue = true
       end
     end
     return "Global"
