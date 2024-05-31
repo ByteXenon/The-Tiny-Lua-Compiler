@@ -751,6 +751,24 @@ function Parser.parse(tokens)
     expectTokenType("Identifier", true)
     local variableName = currentToken.Value
     consume() -- Consume the variable name
+    if checkToken("Character", ",") or checkToken("Keyword", "in") then
+      local iteratorVariables = { variableName }
+      while checkToken("Character", ",") do
+        consume() -- Consume the comma
+        expectTokenType("Identifier", true)
+        local newVariableName = currentToken.Value
+        table.insert(iteratorVariables, newVariableName)
+        consume() -- Consume the variable name
+      end
+      expectKeyword("in")
+      local expressions = consumeExpressions()
+      adjustMultiretNodes(expressions, 3)
+      consume() -- Consume the last token of the expressions
+      expectKeyword("do")
+      local codeblock = parseCodeBlock(false, iteratorVariables)
+      expectKeyword("end", true)
+      return { TYPE = "GenericForLoop", IteratorVariables = iteratorVariables, Expressions = expressions, Codeblock = codeblock }
+    end
     expectCharacter("=")
     local expressions = consumeExpressions()
     consume() -- Consume the last token of the expressions
