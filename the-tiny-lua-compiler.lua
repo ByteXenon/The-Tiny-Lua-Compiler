@@ -594,7 +594,9 @@ function Parser.parse(tokens)
       consume()
       -- <expression> \: <identifier> \( <args> \)
       local methodIdentifier = consume().Value
-      return parseFunctionCall({ TYPE = "TableIndex", Index = { TYPE = "String", Value = methodIdentifier }, Expression = primaryExpression })
+      consume()
+      local methodIndexNode = { TYPE = "MethodIndex", Index = { TYPE = "String", Value = methodIdentifier }, Expression = primaryExpression }
+      return parseFunctionCall(methodIndexNode)
     elseif nextTokenValue == "[" then -- Table index
       consume()
       -- <expression> \[ <expression> \]
