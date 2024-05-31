@@ -796,7 +796,7 @@ function Parser.parse(tokens)
   end
   local function parseFunctionCallOrVariableAssignment()
     local lvalue = parsePrefixExpression()
-    local lvalueType = lvalue.TYPE
+    local lvalueType = tostring(lvalue and lvalue.TYPE)
     if lvalue then
       if isValidAssignmentLvalue(lvalue) then
         return parseAssignment(lvalue)
@@ -807,7 +807,7 @@ function Parser.parse(tokens)
         error("Unexpected lvalue type: " .. lvalueType)
       end
     end
-    error("Expected an lvalue, got: " .. (lvalue or {}).TYPE)
+    error("Expected an lvalue, got: " .. lvalueType)
   end
 
   --// CODE BLOCK PARSERS //--
