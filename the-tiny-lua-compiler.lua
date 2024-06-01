@@ -1002,9 +1002,23 @@ local Compiler = {}
 function Compiler.compile(ast)
   local currentProto
   local locals, takenRegisters, code, constants,
-        constantLookup, protos, numps, isVarArg
+        constantLookup, protos, numParams, numUpvals,
+        isVarArg, functionName
 
   --// PROTO MANAGEMENT //--
+  local function setProto(proto)
+    currentProto   = proto
+    locals         = proto.locals
+    takenRegisters = proto.takenRegisters
+    code           = proto.code
+    constants      = proto.constants
+    constantLookup = proto.constantLookup
+    protos         = proto.protos
+    numParams      = proto.numParams
+    numUpvals      = proto.numUpvals
+    isVarArg       = proto.isVarArg
+    functionName   = proto.functionName
+  end
   local function newProto()
     currentProto = {
       locals         = {},
@@ -1013,17 +1027,13 @@ function Compiler.compile(ast)
       constants      = {},
       constantLookup = {},
       protos         = {},
-      numps          = 0,
-      isVarArg       = false
+      numParams      = 0,
+      numUpvals      = 0,
+      isVarArg       = false,
+      functionName   = "@tlc",
     }
-    locals         = currentProto.locals
-    takenRegisters = currentProto.takenRegisters
-    code           = currentProto.code
-    constants      = currentProto.constants
-    constantLookup = currentProto.constantLookup
-    protos         = currentProto.protos
-    numps          = currentProto.numps
-    isVarArg       = currentProto.isVarArg
+    setProto(currentProto)
+    return currentProto
   end
 
   --// REGISTER MANAGEMENT //--
@@ -1065,7 +1075,7 @@ function Compiler.compile(ast)
   end
 
   --// CODE GENERATION //--
-  local processExpressionNode, processStatementNode, processCodeBlock, processAST
+  local processExpressionNode, processStatementNode, processCodeBlock, processFunction
   function processExpressionNode(node, expressionRegister)
     local expressionRegister = expressionRegister or allocateRegister()
     local nodeType = node.TYPE
@@ -1295,13 +1305,13 @@ function Compiler.compile(ast)
       processStatementNode(node)
     end
   end
-  local function processFunction(list)
+  function processFunction(list)
     newProto()
     processCodeBlock(list)
     addInstruction("RETURN", 0, 1, 0) -- Default return statement
   end
 
-  --// Bitwise operations (needed for compiling to bytecode) //--
+  --// BYTE MANIPULATION (needed for compiling to bytecode) //--
   local function twosComplement(value)
     local value = value or 0
     if value < 0 then
@@ -1362,12 +1372,16 @@ function Compiler.compile(ast)
     double[8] = ((sign * 128) + math.floor(exponent / 16)) % 256
     return string.char(unpack(double))
   end
-  local function makeString(value)
+
+  --// BYTECODE GENERATION //--
+  local makeString, makeConstant, makeInstruction, makeConstantSection,
+        makeCodeSection, makeFunction, makeHeader
+  function makeString(value)
     local value = value .. "\0"
     local size = makeEightBytes(#value)
     return size .. value
   end
-  local function makeConstant(constantValue, constantType)
+  function makeConstant(constantValue, constantType)
     if constantType == "number" then
       return makeOneByte(3) .. makeDouble(constantValue)
     elseif constantType == "string" then
@@ -1381,7 +1395,7 @@ function Compiler.compile(ast)
       error("Unsupported constant type: " .. constantType)
     end
   end
-  local function makeInstruction(instruction)
+  function makeInstruction(instruction)
     local opcode = COMPILER_OPCODE_TO_NUMBER_LOOKUP[instruction[1]]
     local opmode = COMPILER_OPMODES[opcode]
     local mode = opmode
@@ -1409,30 +1423,33 @@ function Compiler.compile(ast)
     end
     return makeFourBytes(instructionNumber)
   end
-  local function makeConstantSection()
+  function makeConstantSection()
     local constantSection = makeFourBytes(#constants) -- Number of constants
     for _, constant in ipairs(constants) do
       local constantType = type(constant)
       constantSection = constantSection .. makeConstant(constant, constantType)
     end
-    constantSection = constantSection .. makeFourBytes(0) -- Number of functions
+    constantSection = constantSection .. makeFourBytes(#protos) -- Number of protos
+    for _, proto in ipairs(protos) do
+      constantSection = constantSection .. makeFunction(proto)
+    end
     return constantSection
   end
-  local function makeCodeSection()
+  function makeCodeSection()
     local codeSection = makeFourBytes(#code) -- Number of instructions
     for _, instruction in ipairs(code) do
       codeSection = codeSection .. makeInstruction(instruction)
     end
     return codeSection
   end
-
-  local function makeFunction()
-    local functionHeader = makeString("@test.lua") -- Function name
+  function makeFunction(proto)
+    setProto(proto)
+    local functionHeader = makeString(functionName) -- Function name
     functionHeader = functionHeader .. makeFourBytes(0) -- Line defined
     functionHeader = functionHeader .. makeFourBytes(0) -- Last line defined
-    functionHeader = functionHeader .. makeOneByte(0) -- nups (Number of upvalues)
-    functionHeader = functionHeader .. makeOneByte(0) -- Number of parameters
-    functionHeader = functionHeader .. makeOneByte(2) -- Is vararg (2 = VARARG_HASARG)
+    functionHeader = functionHeader .. makeOneByte(numUpvals) -- nups (Number of upvalues)
+    functionHeader = functionHeader .. makeOneByte(numParams) -- Number of parameters
+    functionHeader = functionHeader .. makeOneByte((isVarArg and 2) or 0) -- Is vararg
     functionHeader = functionHeader .. makeOneByte(128) -- Max stack size
 
     functionHeader = functionHeader .. makeCodeSection()
@@ -1443,7 +1460,7 @@ function Compiler.compile(ast)
     functionHeader = functionHeader .. makeFourBytes(0) -- Upvalues
     return functionHeader
   end
-  local function makeHeader()
+  function makeHeader()
     local header = "\27Lua" -- Signature
     header = header .. string.char(0x51)  -- Version 5.1
     header = header .. "\0"  -- Format 0 (official)
@@ -1456,13 +1473,12 @@ function Compiler.compile(ast)
     return header
   end
 
+  --// MAIN //--
   local function makeBytecode()
     local header = makeHeader()
-    local functionHeader = makeFunction()
+    local functionHeader = makeFunction(currentProto)
     return header .. functionHeader
   end
-
-  --// MAIN //--
   local function compile()
     processFunction(ast)
     return makeBytecode()
