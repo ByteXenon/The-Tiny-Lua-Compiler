@@ -1084,6 +1084,9 @@ function Compiler.compile(ast)
   local function registerVariable(localName, register)
     locals[localName] = register
   end
+  local function unregisterVariable(localName)
+    locals[localName] = nil
+  end
 
   --// CODE GENERATION //--
   local processExpressionNode, processStatementNode, processCodeBlock, processFunction
@@ -1262,6 +1265,28 @@ function Compiler.compile(ast)
         end
         registerVariable(localName, expressionRegister)
       end
+    elseif nodeType == "NumericForLoop" then
+      local variableName = node.VariableName
+      local expressions = node.Expressions
+      local codeblock = node.Codeblock
+      local startRegister = processExpressionNode(expressions[1])
+      local endRegister = processExpressionNode(expressions[2])
+      local stepRegister
+      if expressions[3] then
+        stepRegister = processExpressionNode(expressions[3])
+      else
+        stepRegister = allocateRegister()
+        addInstruction("LOADK", stepRegister, findOrCreateConstant(1))
+      end
+      local forprepInstruction = addInstruction("FORPREP", startRegister, 0) -- Placeholder
+      local loopStart = #code
+      registerVariable(variableName, startRegister)
+      processCodeBlock(codeblock)
+      local loopEnd = #code
+      addInstruction("FORLOOP", startRegister, loopStart - loopEnd - 1)
+      forprepInstruction[3] = loopEnd - loopStart
+      unregisterVariable(variableName)
+      deallocateRegisters({ startRegister, endRegister, stepRegister })
     elseif nodeType == "ReturnStatement" then
       local expressionRegisters = {}
       for index, expression in ipairs(node.Expressions) do
