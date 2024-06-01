@@ -784,6 +784,41 @@ function Parser.parse(tokens)
     expectKeyword("end", true)
     return { TYPE = "NumericForLoop", VariableName = variableName, Expressions = expressions, Codeblock = codeblock }
   end
+  local function parseFunction()
+    consume() -- Consume the "function" token
+    expectTokenType("Identifier", true)
+    local variableName = currentToken.Value
+    local variableType = getVariableType(variableName)
+    local expression = { TYPE = "Variable", Value = variableName, VariableType = variableType }
+    local fields, isMethod = { }, false
+    while consume() do
+      if checkToken("Character", ".") then
+        consume() -- Consume the "."
+        expectTokenType("Identifier", true)
+        local fieldName = currentToken.Value
+        table.insert(fields, fieldName)
+      elseif checkToken("Character", ":") then
+        consume() -- Consume the ":"
+        expectTokenType("Identifier", true)
+        local methodName = currentToken.Value
+        table.insert(fields, methodName)
+        isMethod = true
+        consume() -- Consume the method name
+        break
+      else break end
+    end
+    local parameters, isVarArg = consumeParameterList()
+    local codeblock = parseCodeBlock(true, parameters)
+    expectKeyword("end", true)
+    return { TYPE = "FunctionDeclaration",
+      Expression = expression,
+      Fields = fields,
+      IsMethod = isMethod,
+      Codeblock = codeblock,
+      Parameters = parameters,
+      IsVarArg = isVarArg
+    }
+  end
   local function parseAssignment(lvalue)
     local lvalues = { lvalue }
     consume() -- Consume the last token of the lvalue
@@ -832,6 +867,7 @@ function Parser.parse(tokens)
       elseif currentTokenValue == "break"        then node = parseBreak()
       elseif currentTokenValue == "if"           then node = parseIf()
       elseif currentTokenValue == "for"          then node = parseFor()
+      elseif currentTokenValue == "function"     then node = parseFunction()
       else error("Unsupported keyword: " .. currentTokenValue) end
       consumeOptionalSemilcolon()
       return node
