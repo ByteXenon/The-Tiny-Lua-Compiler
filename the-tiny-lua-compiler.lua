@@ -1000,11 +1000,31 @@ local NEGATIVE_CONDITIONAL_OPERATOR_LOOKUP = createLookupTable({"~=", ">", ">="}
 --* Compiler *--
 local Compiler = {}
 function Compiler.compile(ast)
-  local locals = {}
-  local takenRegisters = {}
-  local code = {}
-  local constants = {}
-  local constantLookup = {}
+  local currentProto
+  local locals, takenRegisters, code, constants,
+        constantLookup, protos, numps, isVarArg
+
+  --// PROTO MANAGEMENT //--
+  local function newProto()
+    currentProto = {
+      locals         = {},
+      takenRegisters = {},
+      code           = {},
+      constants      = {},
+      constantLookup = {},
+      protos         = {},
+      numps          = 0,
+      isVarArg       = false
+    }
+    locals         = currentProto.locals
+    takenRegisters = currentProto.takenRegisters
+    code           = currentProto.code
+    constants      = currentProto.constants
+    constantLookup = currentProto.constantLookup
+    protos         = currentProto.protos
+    numps          = currentProto.numps
+    isVarArg       = currentProto.isVarArg
+  end
 
   --// REGISTER MANAGEMENT //--
   local function allocateRegister()
@@ -1275,9 +1295,10 @@ function Compiler.compile(ast)
       processStatementNode(node)
     end
   end
-  function processAST(ast)
-    processCodeBlock(ast)
-    addInstruction("RETURN", 0, 1, 0)
+  local function processFunction(list)
+    newProto()
+    processCodeBlock(list)
+    addInstruction("RETURN", 0, 1, 0) -- Default return statement
   end
 
   --// Bitwise operations (needed for compiling to bytecode) //--
@@ -1443,7 +1464,7 @@ function Compiler.compile(ast)
 
   --// MAIN //--
   local function compile()
-    processAST(ast)
+    processFunction(ast)
     return makeBytecode()
   end
 
