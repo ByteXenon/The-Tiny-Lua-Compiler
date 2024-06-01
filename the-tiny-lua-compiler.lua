@@ -1101,26 +1101,7 @@ function Compiler.compile(ast)
       local codeblock  = node.Codeblock
       local parameters = node.Parameters
       local isVarArg   = node.isVarArg
-      local oldProto = currentProto
-      local proto = newProto()
-      proto.functionName = "tlc"
-      proto.numParams = #parameters
-      for _, parameter in ipairs(parameters) do
-        registerVariable(parameter, allocateRegister())
-      end
-      processCodeBlock(codeblock)
-      addInstruction("RETURN", 0, 1)
-      setProto(oldProto)
-      table.insert(protos, proto)
-      addInstruction("CLOSURE", expressionRegister, #protos - 1)
-      for index, upvalueName in ipairs(proto.upvalues) do
-        local isLocal = locals[upvalueName] ~= nil
-        if isLocal then
-          addInstruction("MOVE", 0, locals[upvalueName])
-        else
-          addInstruction("GETUPVAL", 0, findOrCreateUpvalue(upvalueName))
-        end
-      end
+      processFunction(codeblock, expressionRegister, parameters, isVarArg)
     elseif nodeType == "FunctionCall" then
       processExpressionNode(node.Expression, expressionRegister)
       local argumentRegisters = {}
@@ -1227,6 +1208,41 @@ function Compiler.compile(ast)
     local nodeType = node.TYPE
     if nodeType == "FunctionCall" then
       processExpressionNode(node)
+    elseif nodeType == "LocalFunctionDeclaration" then
+      local name          = node.Name
+      local codeblock     = node.Codeblock
+      local parameters    = node.Parameters
+      local isVarArg      = node.IsVarArg
+      local localRegister = allocateRegister()
+      processFunction(codeblock, localRegister, parameters, isVarArg)
+      registerVariable(name, localRegister)
+    elseif nodeType == "FunctionDeclaration" then
+      local expression         = node.Expression
+      local fields             = node.Fields
+      local isMethod           = node.IsMethod
+      local codeblock          = node.Codeblock
+      local parameters         = node.Parameters
+      local isVarArg           = node.IsVarArg
+      if #fields > 0 then
+        local closureRegister = allocateRegister()
+        processFunction(codeblock, closureRegister, parameters, isVarArg)
+        local expressionRegister = processExpressionNode(expression)
+        for index, field in ipairs(fields) do
+          local fieldRegister = allocateRegister()
+          addInstruction("LOADK", fieldRegister, findOrCreateConstant(field))
+          if index == #fields then addInstruction("SETTABLE", expressionRegister, fieldRegister, closureRegister)
+          else                     addInstruction("GETTABLE", expressionRegister, expressionRegister, fieldRegister)
+          end
+          deallocateRegister(fieldRegister)
+        end
+        deallocateRegisters({ expressionRegister, closureRegister })
+        return
+      end
+      local isLocal = expression.VariableType == "Local"
+      if isLocal then
+        local localRegister = locals[expression.Value]
+        processFunction(codeblock, localRegister, parameters, isVarArg)
+      end
     elseif nodeType == "LocalDeclaration" then
       local expressionRegisters = {}
       for index, expression in ipairs(node.Expressions) do
@@ -1342,10 +1358,30 @@ function Compiler.compile(ast)
       processStatementNode(node)
     end
   end
-  function processFunction(list)
-    newProto()
-    processCodeBlock(list)
-    addInstruction("RETURN", 0, 1, 0) -- Default return statement
+  function processFunction(codeBlock, expressionRegister, parameters, isVarArg)
+    local oldProto  = currentProto
+    local proto     = newProto()
+    proto.numParams = #parameters
+
+    for _, parameter in ipairs(parameters) do
+      registerVariable(parameter, allocateRegister())
+    end
+    processCodeBlock(codeBlock)
+
+    addInstruction("RETURN", 0, 1) -- Default return statement
+    setProto(oldProto)
+    table.insert(protos, proto)
+    addInstruction("CLOSURE", expressionRegister, #protos - 1)
+
+    for index, upvalueName in ipairs(proto.upvalues) do
+      local isLocal = locals[upvalueName] ~= nil
+      if isLocal then
+        addInstruction("MOVE", 0, locals[upvalueName])
+      else
+        addInstruction("GETUPVAL", 0, findOrCreateUpvalue(upvalueName))
+      end
+    end
+    return proto
   end
 
   --// BYTE MANIPULATION (needed for compiling to bytecode) //--
@@ -1517,7 +1553,9 @@ function Compiler.compile(ast)
     return header .. functionHeader
   end
   local function compile()
-    processFunction(ast)
+    newProto()
+    processCodeBlock(ast)
+    addInstruction("RETURN", 0, 1) -- Default return statement
     return makeBytecode()
   end
 
