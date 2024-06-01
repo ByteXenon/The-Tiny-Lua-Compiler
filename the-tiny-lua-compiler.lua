@@ -166,6 +166,13 @@ function Tokenizer.tokenize(code)
     local char = char or curChar
     return char:match("[%a_]")
   end
+  local function isScientificNotationPrefix(char)
+    local char = char or curChar
+    return char == "e" or char == "E"
+  end
+  local function isHexadecimalNumberPrefix()
+    return curChar == "0" and (lookAhead() == "x" or lookAhead() == "X")
+  end
   local function isVarArg()
     return curChar == "." and lookAhead(1) == "." and lookAhead(2) == "."
   end
@@ -194,9 +201,40 @@ function Tokenizer.tokenize(code)
   end
   local function consumeNumber()
     local number = { curChar }
+
+    -- Hexadecimal number case
+    if isHexadecimalNumberPrefix() then
+      table.insert(number, consume()) -- Consume the "0"
+      table.insert(number, consume()) -- Consume the "x"
+      while isNumber(lookAhead()) or lookAhead():match("[a-fA-F]") do
+        table.insert(number, consume())
+      end
+      return table.concat(number)
+    end
+
     while isNumber(lookAhead()) do
       table.insert(number, consume())
     end
+
+    -- Floating point number case
+    if lookAhead() == "." then
+      table.insert(number, consume()) -- Consume the "."
+      while isNumber(lookAhead()) do
+        table.insert(number, consume())
+      end
+    end
+
+    -- Exponential (scientific) notation case
+    if isScientificNotationPrefix(lookAhead()) then
+      table.insert(number, consume()) -- Consume the "e" or "E"
+      if lookAhead() == "+" or lookAhead() == "-" then -- Consume optional sign
+        table.insert(number, consume())
+      end
+      while isNumber(lookAhead()) do
+        table.insert(number, consume())
+      end
+    end
+
     return table.concat(number)
   end
   local function consumeString()
