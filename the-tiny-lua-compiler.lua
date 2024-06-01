@@ -1086,6 +1086,18 @@ function Compiler.compile(ast)
 
     if nodeType == "Number" or nodeType == "String" then
       addInstruction("LOADK", expressionRegister, findOrCreateConstant(node.Value))
+    elseif nodeType == "Function" then
+      local codeblock  = node.Codeblock
+      local parameters = node.Parameters
+      local isVarArg   = node.isVarArg
+      local oldProto = currentProto
+      local proto = newProto()
+      proto.functionName = "tlc"
+      processCodeBlock(codeblock)
+      addInstruction("RETURN", 0, 1)
+      setProto(oldProto)
+      table.insert(protos, proto)
+      addInstruction("CLOSURE", expressionRegister, #protos - 1)
     elseif nodeType == "FunctionCall" then
       processExpressionNode(node.Expression, expressionRegister)
       local argumentRegisters = {}
