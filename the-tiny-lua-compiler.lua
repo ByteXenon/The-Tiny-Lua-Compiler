@@ -694,11 +694,16 @@ function Parser.parse(tokens)
       return { TYPE = "LocalFunctionDeclaration", Name = name, Codeblock = codeblock, Parameters = parameters, IsVarArg = isVarArg }
     end
     local variables = consumeIdentifierList()
-    consume() -- Consume the last token of the last identifier
-    expectCharacter("=")
-    local expressions = consumeExpressions()
-    declareLocalVariables(variables)
-    return { TYPE = "LocalDeclaration", Variables = variables, Expressions = expressions }
+    if checkToken("Character", "=", lookAhead()) then
+      consume() -- Consume the last token of the last identifier
+      expectCharacter("=")
+      local expressions = consumeExpressions()
+      declareLocalVariables(variables)
+      return { TYPE = "LocalDeclaration", Variables = variables, Expressions = expressions }
+    else
+      declareLocalVariables(variables)
+      return { TYPE = "LocalDeclaration", Variables = variables, Expressions = {} }
+    end
   end
   local function parseWhile()
     consume() -- Consume the "while" token
