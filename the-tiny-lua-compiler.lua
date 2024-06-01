@@ -1002,8 +1002,8 @@ local Compiler = {}
 function Compiler.compile(ast)
   local currentProto
   local locals, takenRegisters, code, constants,
-        constantLookup, protos, numParams, numUpvals,
-        isVarArg, functionName
+        constantLookup, upvalues, upvalueLookup,
+        protos, numParams, isVarArg, functionName
 
   --// PROTO MANAGEMENT //--
   local function setProto(proto)
@@ -1013,9 +1013,10 @@ function Compiler.compile(ast)
     code           = proto.code
     constants      = proto.constants
     constantLookup = proto.constantLookup
+    upvalues       = proto.upvalues
+    upvalueLookup  = proto.upvalueLookup
     protos         = proto.protos
     numParams      = proto.numParams
-    numUpvals      = proto.numUpvals
     isVarArg       = proto.isVarArg
     functionName   = proto.functionName
   end
@@ -1026,9 +1027,10 @@ function Compiler.compile(ast)
       code           = {},
       constants      = {},
       constantLookup = {},
+      upvalues       = {},
+      upvalueLookup  = {},
       protos         = {},
       numParams      = 0,
-      numUpvals      = 0,
       isVarArg       = false,
       functionName   = "@tlc",
     }
@@ -1065,6 +1067,15 @@ function Compiler.compile(ast)
     constantLookup[value] = constantIndex
     return constantIndex
   end
+  local function findOrCreateUpvalue(value)
+    if upvalueLookup[value] then
+      return upvalueLookup[value]
+    end
+    table.insert(upvalues, value)
+    local upvalueIndex = #upvalues - 1
+    upvalueLookup[value] = upvalueIndex
+    return upvalueIndex
+  end
   local function addInstruction(opname, a, b, c)
     local instruction = { opname, a, b, c }
     table.insert(code, instruction)
@@ -1093,11 +1104,23 @@ function Compiler.compile(ast)
       local oldProto = currentProto
       local proto = newProto()
       proto.functionName = "tlc"
+      proto.numParams = #parameters
+      for _, parameter in ipairs(parameters) do
+        registerVariable(parameter, allocateRegister())
+      end
       processCodeBlock(codeblock)
       addInstruction("RETURN", 0, 1)
       setProto(oldProto)
       table.insert(protos, proto)
       addInstruction("CLOSURE", expressionRegister, #protos - 1)
+      for index, upvalueName in ipairs(proto.upvalues) do
+        local isLocal = locals[upvalueName] ~= nil
+        if isLocal then
+          addInstruction("MOVE", 0, locals[upvalueName])
+        else
+          addInstruction("GETUPVAL", 0, findOrCreateUpvalue(upvalueName))
+        end
+      end
     elseif nodeType == "FunctionCall" then
       processExpressionNode(node.Expression, expressionRegister)
       local argumentRegisters = {}
@@ -1154,6 +1177,8 @@ function Compiler.compile(ast)
         addInstruction("GETGLOBAL", expressionRegister, findOrCreateConstant(node.Value))
       elseif variableType == "Local" then
         addInstruction("MOVE", expressionRegister, locals[node.Value])
+      elseif variableType == "Upvalue" then
+        addInstruction("GETUPVAL", expressionRegister, findOrCreateUpvalue(node.Value))
       end
     elseif nodeType == "BinaryOperator" then
       local nodeOperator = node.Operator
@@ -1459,7 +1484,7 @@ function Compiler.compile(ast)
     local functionHeader = makeString(functionName) -- Function name
     functionHeader = functionHeader .. makeFourBytes(0) -- Line defined
     functionHeader = functionHeader .. makeFourBytes(0) -- Last line defined
-    functionHeader = functionHeader .. makeOneByte(numUpvals) -- nups (Number of upvalues)
+    functionHeader = functionHeader .. makeOneByte(#upvalues) -- nups (Number of upvalues)
     functionHeader = functionHeader .. makeOneByte(numParams) -- Number of parameters
     functionHeader = functionHeader .. makeOneByte((isVarArg and 2) or 0) -- Is vararg
     functionHeader = functionHeader .. makeOneByte(128) -- Max stack size
