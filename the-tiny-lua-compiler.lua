@@ -1087,6 +1087,11 @@ function Compiler.compile(ast)
   local function unregisterVariable(localName)
     locals[localName] = nil
   end
+  local function unregisterVariables(variables)
+    for _, variable in ipairs(variables) do
+      unregisterVariable(variable)
+    end
+  end
 
   --// CODE GENERATION //--
   local processExpressionNode, processStatementNode, processCodeBlock, processFunction
@@ -1313,13 +1318,9 @@ function Compiler.compile(ast)
       addInstruction("JMP", 0, loopStart - #code - 1)
       deallocateRegisters(iteratorRegisters)
       deallocateRegisters({ expressionRegister, forGeneratorRegister, forStateRegister, forControlRegister })
-      unregisterVariable("(for generator)")
-      unregisterVariable("(for state)")
-      unregisterVariable("(for control)")
-      for index, variableRegister in ipairs(iteratorRegisters) do
-        unregisterVariable(iteratorVariables[index])
-        deallocateRegister(variableRegister)
-      end
+      unregisterVariables({ "(for generator)", "(for state)", "(for control)" })
+      unregisterVariables(iteratorVariables)
+      deallocateRegisters(iteratorRegisters)
     elseif nodeType == "ReturnStatement" then
       local expressionRegisters = {}
       for index, expression in ipairs(node.Expressions) do
