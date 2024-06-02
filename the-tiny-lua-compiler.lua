@@ -1287,6 +1287,34 @@ function Compiler.compile(ast)
       forprepInstruction[3] = loopEnd - loopStart
       unregisterVariable(variableName)
       deallocateRegisters({ startRegister, endRegister, stepRegister })
+    elseif nodeType == "GenericForLoop" then
+      local iteratorVariables = node.IteratorVariables
+      local expressions = node.Expressions
+      local codeblock = node.Codeblock
+      local iteratorRegisters = {}
+      local expressionRegister = processExpressionNode(expressions[1])
+      local startJmpInstruction = addInstruction("JMP", 0, 0) -- Placeholder
+      local forGeneratorRegister = expressionRegister
+      local forStateRegister = allocateRegister()
+      local forControlRegister = allocateRegister()
+      registerVariable("(for generator)", forGeneratorRegister)
+      registerVariable("(for state)", forStateRegister)
+      registerVariable("(for control)", forControlRegister)
+      local loopStart = #code
+      for index, iteratorVariable in ipairs(iteratorVariables) do
+        local iteratorRegister = allocateRegister()
+        iteratorRegisters[index] = iteratorRegister
+        registerVariable(iteratorVariable, iteratorRegister)
+      end
+      processCodeBlock(codeblock)
+      local tforloopInstruction = addInstruction("TFORLOOP", expressionRegister, 0, #iteratorVariables)
+      startJmpInstruction[3] = #code - loopStart - 1
+      addInstruction("JMP", 0, loopStart - #code - 1)
+      deallocateRegisters(iteratorRegisters)
+      deallocateRegisters({ expressionRegister, forGeneratorRegister, forStateRegister, forControlRegister })
+      unregisterVariable("(for generator)")
+      unregisterVariable("(for state)")
+      unregisterVariable("(for control)")
     elseif nodeType == "ReturnStatement" then
       local expressionRegisters = {}
       for index, expression in ipairs(node.Expressions) do
