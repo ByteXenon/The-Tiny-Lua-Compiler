@@ -577,7 +577,7 @@ function Parser.parse(tokens)
   local function consumeMethodCall(currentExpression)
     local methodIdentifier = consume().Value -- Consume the ":" character, and get the method identifier
     consume() -- Consume the method identifier
-    local methodIndexNode = { TYPE = "TableIndex", Index = { TYPE = "String", Value = methodIdentifier }, Expression = primaryExpression }
+    local methodIndexNode = { TYPE = "TableIndex", Index = { TYPE = "String", Value = methodIdentifier }, Expression = currentExpression }
     local functionCallNode = consumeFunctionCall(methodIndexNode)
     functionCallNode.TYPE = "MethodCall"
     return functionCallNode
@@ -1132,6 +1132,23 @@ function Compiler.compile(ast)
       end
       addInstruction("CALL", expressionRegister, argumentAmount, returnAmount)
       deallocateRegisters(argumentRegisters)
+    elseif nodeType == "MethodCall" then
+      local nodeIndexIndex      = node.Expression.Index
+      local nodeIndexExpression = node.Expression.Expression
+      processExpressionNode(nodeIndexExpression, expressionRegister)
+      local selfArgumentRegister = allocateRegister()
+      local nodeIndexRegister = processExpressionNode(nodeIndexIndex)
+      addInstruction("SELF", expressionRegister, expressionRegister, nodeIndexRegister)
+      deallocateRegister(nodeIndexRegister)
+      local argumentRegisters = { selfArgumentRegister } -- Allocate the self register
+      for index, argument in ipairs(node.Arguments) do
+        argumentRegisters[index] = processExpressionNode(argument)
+      end
+      local returnAmount = node.ReturnValueAmount + 1
+      local argumentAmount = #node.Arguments + 2
+      if returnAmount <= 0 then returnAmount = 0 end
+      addInstruction("CALL", expressionRegister, argumentAmount, returnAmount)
+      deallocateRegisters(argumentRegisters)
     elseif nodeType == "Constant" then
       local nodeValue = node.Value
       if nodeValue ~= "nil" then
@@ -1219,7 +1236,7 @@ function Compiler.compile(ast)
   end
   function processStatementNode(node)
     local nodeType = node.TYPE
-    if nodeType == "FunctionCall" then
+    if nodeType == "FunctionCall" or nodeType == "MethodCall" then
       local functionRegister = processExpressionNode(node)
       deallocateRegister(functionRegister)
     elseif nodeType == "LocalFunctionDeclaration" then
