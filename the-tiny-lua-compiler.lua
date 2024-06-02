@@ -575,8 +575,8 @@ function Parser.parse(tokens)
     return { TYPE = "FunctionCall", Expression = currentExpression, Arguments = arguments, ReturnValueAmount = 1 }
   end
   local function consumeMethodCall(currentExpression)
-    local methodIdentifier = consume().Value
-    consume()
+    local methodIdentifier = consume().Value -- Consume the ":" character, and get the method identifier
+    consume() -- Consume the method identifier
     local methodIndexNode = { TYPE = "TableIndex", Index = { TYPE = "String", Value = methodIdentifier }, Expression = primaryExpression }
     local functionCallNode = consumeFunctionCall(methodIndexNode)
     functionCallNode.TYPE = "MethodCall"
