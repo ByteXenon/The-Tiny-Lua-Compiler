@@ -574,6 +574,14 @@ function Parser.parse(tokens)
     consume() -- Consume the last token of the expression
     return { TYPE = "FunctionCall", Expression = currentExpression, Arguments = arguments, ReturnValueAmount = 1 }
   end
+  local function consumeMethodCall(currentExpression)
+    local methodIdentifier = consume().Value
+    consume()
+    local methodIndexNode = { TYPE = "TableIndex", Index = { TYPE = "String", Value = methodIdentifier }, Expression = primaryExpression }
+    local functionCallNode = parseFunctionCall(methodIndexNode)
+    functionCallNode.TYPE = "MethodCall"
+    return functionCallNode
+  end
   local function consumeOptionalSemilcolon()
     local nextToken = lookAhead()
     if checkToken("Character", ";", nextToken) then
@@ -631,10 +639,7 @@ function Parser.parse(tokens)
     elseif nextTokenValue == ":" then -- Method call
       consume()
       -- <expression> \: <identifier> \( <args> \)
-      local methodIdentifier = consume().Value
-      consume()
-      local methodIndexNode = { TYPE = "MethodIndex", Index = { TYPE = "String", Value = methodIdentifier }, Expression = primaryExpression }
-      return parseFunctionCall(methodIndexNode)
+      return consumeMethodCall(primaryExpression)
     elseif nextTokenValue == "[" then -- Table index
       consume()
       -- <expression> \[ <expression> \]
