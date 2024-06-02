@@ -1210,7 +1210,8 @@ function Compiler.compile(ast)
   function processStatementNode(node)
     local nodeType = node.TYPE
     if nodeType == "FunctionCall" then
-      processExpressionNode(node)
+      local functionRegister = processExpressionNode(node)
+      deallocateRegister(functionRegister)
     elseif nodeType == "LocalFunctionDeclaration" then
       local name          = node.Name
       local codeblock     = node.Codeblock
@@ -1315,6 +1316,12 @@ function Compiler.compile(ast)
       unregisterVariable("(for generator)")
       unregisterVariable("(for state)")
       unregisterVariable("(for control)")
+      for index, variableRegister in ipairs(iteratorRegisters) do
+        unregisterVariable(iteratorVariables[index])
+        deallocateRegister(variableRegister)
+      end
+      for index, value in pairs(takenRegisters) do
+        print(index, value) end
     elseif nodeType == "ReturnStatement" then
       local expressionRegisters = {}
       for index, expression in ipairs(node.Expressions) do
