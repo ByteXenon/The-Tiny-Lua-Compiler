@@ -567,7 +567,7 @@ function Parser.parse(tokens)
 
     return { TYPE = "Table", Elements = elements }
   end
-  local function parseFunctionCall(currentExpression)
+  local function consumeFunctionCall(currentExpression)
     consume() -- Consume the "("
     local arguments = consumeExpressions()
     adjustMultiretNodes(arguments, -1)
@@ -578,7 +578,7 @@ function Parser.parse(tokens)
     local methodIdentifier = consume().Value
     consume()
     local methodIndexNode = { TYPE = "TableIndex", Index = { TYPE = "String", Value = methodIdentifier }, Expression = primaryExpression }
-    local functionCallNode = parseFunctionCall(methodIndexNode)
+    local functionCallNode = consumeFunctionCall(methodIndexNode)
     functionCallNode.TYPE = "MethodCall"
     return functionCallNode
   end
@@ -631,7 +631,7 @@ function Parser.parse(tokens)
     if nextTokenValue == "(" then -- Function call
       consume()
       -- <expression> \( <args> \)
-      return parseFunctionCall(primaryExpression)
+      return consumeFunctionCall(primaryExpression)
     elseif nextTokenValue == "." then -- Table access
       consume()
       -- <expression> \. <identifier>
