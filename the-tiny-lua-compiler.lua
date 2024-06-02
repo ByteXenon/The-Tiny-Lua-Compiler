@@ -1005,6 +1005,7 @@ local NEGATIVE_CONDITIONAL_OPERATOR_LOOKUP = createLookupTable({"~=", ">", ">="}
 --* Compiler *--
 local Compiler = {}
 function Compiler.compile(ast)
+  local breakInstructions
   local currentProto
   local locals, takenRegisters, code, constants,
         constantLookup, upvalues, upvalueLookup,
@@ -1239,6 +1240,9 @@ function Compiler.compile(ast)
     if nodeType == "FunctionCall" or nodeType == "MethodCall" then
       local functionRegister = processExpressionNode(node)
       deallocateRegister(functionRegister)
+    elseif nodeType == "BreakStatement" then
+      local jumpInstruction, jumpInstructionIndex = addInstruction("JMP", 0, 0) -- Placeholder
+      table.insert(breakInstructions, jumpInstructionIndex)
     elseif nodeType == "LocalFunctionDeclaration" then
       local name          = node.Name
       local codeblock     = node.Codeblock
@@ -1309,10 +1313,16 @@ function Compiler.compile(ast)
       local forprepInstruction = addInstruction("FORPREP", startRegister, 0) -- Placeholder
       local loopStart = #code
       registerVariable(variableName, startRegister)
+      local oldBreakInstructions = breakInstructions
+      breakInstructions = {}
       processCodeBlock(codeblock)
       local loopEnd = #code
       addInstruction("FORLOOP", startRegister, loopStart - loopEnd - 1)
       forprepInstruction[3] = loopEnd - loopStart
+      for _, breakInstructionIndex in ipairs(breakInstructions) do
+        code[breakInstructionIndex][3] = #code - breakInstructionIndex
+      end
+      breakInstructions = oldBreakInstructions
       unregisterVariable(variableName)
       deallocateRegisters({ startRegister, endRegister, stepRegister })
     elseif nodeType == "GenericForLoop" then
@@ -1334,10 +1344,16 @@ function Compiler.compile(ast)
         iteratorRegisters[index] = iteratorRegister
         registerVariable(iteratorVariable, iteratorRegister)
       end
+      local oldBreakInstructions = breakInstructions
+      breakInstructions = {}
       processCodeBlock(codeblock)
       local tforloopInstruction = addInstruction("TFORLOOP", expressionRegister, 0, #iteratorVariables)
       startJmpInstruction[3] = #code - loopStart - 1
       addInstruction("JMP", 0, loopStart - #code - 1)
+      for _, breakInstructionIndex in ipairs(breakInstructions) do
+        code[breakInstructionIndex][3] = #code - breakInstructionIndex
+      end
+      breakInstructions = oldBreakInstructions
       deallocateRegisters(iteratorRegisters)
       deallocateRegisters({ expressionRegister, forGeneratorRegister, forStateRegister, forControlRegister })
       unregisterVariables({ "(for generator)", "(for state)", "(for control)" })
@@ -1359,9 +1375,15 @@ function Compiler.compile(ast)
       local jumpInstruction = addInstruction("JMP", 0, 0) -- Placeholder
       deallocateRegister(conditionRegister)
       local codeStart = #code
+      local oldBreakInstructions = breakInstructions
+      breakInstructions = {}
       processCodeBlock(node.Codeblock)
       local jumpBackInstruction = addInstruction("JMP", 0, loopStart - #code - 1)
       jumpInstruction[3] = #code - codeStart
+      for _, breakInstructionIndex in ipairs(breakInstructions) do
+        code[breakInstructionIndex][3] = #code - breakInstructionIndex
+      end
+      breakInstructions = oldBreakInstructions
     elseif nodeType == "RepeatLoop" then
       local loopStart = #code
       processCodeBlock(node.Codeblock)
