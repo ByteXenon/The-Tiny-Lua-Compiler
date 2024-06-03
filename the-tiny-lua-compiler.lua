@@ -107,6 +107,19 @@ local TOKENIZER_LUA_OPERATORS = {
   "<=",  ">=", "==",  "~=",
   "and", "or", "not", ".."
 }
+local TOKENIZER_ESCAPED_CHARACTER_CONVERSIONS = {
+  ["a"]     = "\a", -- bell
+  ["b"]     = "\b", -- backspace
+  ["f"]     = "\f", -- form feed
+  ["n"]     = "\n", -- newline
+  ["r"]     = "\r", -- carriage return
+  ["t"]     = "\t", -- horizontal tab
+  ["v"]     = "\v", -- vertical tab
+
+  [ "\\" ] = "\\",   -- backslash
+  [ "\"" ] = "\"",  -- double quote
+  [ "\'" ] = "\'",  -- single quote
+}
 local TOKENIZER_RESERVED_KEYWORDS = { "while",    "do",     "end",   "for",
                                       "local",    "repeat", "until", "return",
                                       "in",       "if",     "else",  "elseif",
@@ -199,6 +212,14 @@ function Tokenizer.tokenize(code)
     end
     return table.concat(identifier)
   end
+  local function consumeInteger(maxLength)
+    local integer = { curChar }
+    while lookAhead():match("%d") do
+      if (maxLength and #integer >= maxLength) then break end
+      table.insert(integer, consume())
+    end
+    return table.concat(integer)
+  end
   local function consumeNumber()
     local number = { curChar }
 
@@ -239,12 +260,25 @@ function Tokenizer.tokenize(code)
   end
   local function consumeString()
     local delimiter = curChar
-    local string = { }
-    while lookAhead() ~= delimiter do
-      table.insert(string, consume())
+    local newString = { }
+    consume()
+    while curChar ~= delimiter do
+      if curChar == "\\" then
+        local nextChar = consume()
+        if nextChar:match("%d") then -- Numeric escape sequence?
+          local number = consumeInteger(3)
+          table.insert(newString, string.char(tonumber(number)))
+        elseif TOKENIZER_ESCAPED_CHARACTER_CONVERSIONS[nextChar] then
+          table.insert(newString, TOKENIZER_ESCAPED_CHARACTER_CONVERSIONS[nextChar])
+        else
+          error("invalid escape sequence near '\\" .. nextChar .. "'")
+        end
+      else
+        table.insert(newString, curChar)
+      end
+      consume()
     end
-    consume() -- Consume the closing delimiter
-    return table.concat(string)
+    return table.concat(newString)
   end
   local function consumeOperator()
     local node = TOKENIZER_OPERATOR_TRIE
