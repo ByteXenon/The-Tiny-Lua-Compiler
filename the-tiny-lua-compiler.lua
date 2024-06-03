@@ -1483,6 +1483,8 @@ function Compiler.compile(ast)
             addInstruction("MOVE", locals[variableName], expressionRegister)
           elseif variableType == "Global" then
             addInstruction("SETGLOBAL", expressionRegister, findOrCreateConstant(variableName))
+          elseif variableType == "Upvalue" then
+            addInstruction("SETUPVAL", expressionRegister, findOrCreateUpvalue(variableName))
           end
         elseif lvalueType == "TableIndex" then
           local indexRegister = processExpressionNode(lvalue.Index)
