@@ -1203,7 +1203,7 @@ function Compiler.compile(ast)
       local temporaryRegisters = {}
       local numberOfImplicitKeys = 0
       for _, element in ipairs(elements) do
-        if element.ImplicitKey then
+        if element.IsImplicitKey then
           table.insert(temporaryRegisters, processExpressionNode(element.Value))
           numberOfImplicitKeys = numberOfImplicitKeys + 1
         end
@@ -1211,7 +1211,7 @@ function Compiler.compile(ast)
       addInstruction("SETLIST", expressionRegister, numberOfImplicitKeys, 1)
       deallocateRegisters(temporaryRegisters)
       for _, element in ipairs(elements) do
-        if not element.ImplicitKey then
+        if not element.IsImplicitKey then
           local valueRegister = processExpressionNode(element.Value)
           local keyRegister = processExpressionNode(element.Key)
           deallocateRegisters({ valueRegister, keyRegister })
