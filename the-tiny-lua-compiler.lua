@@ -1001,6 +1001,7 @@ local COMPILER_UNARY_OPERATOR_LOOKUP = {
 
 local COMPILER_CONTROL_FLOW_OPERATOR_LOOKUP = createLookupTable({"and", "or"})
 local NEGATIVE_CONDITIONAL_OPERATOR_LOOKUP = createLookupTable({"~=", ">", ">="})
+local POSITIVE_CONDITIONAL_OPERATOR_LOOKUP = createLookupTable({"==", "<", "<="})
 
 --* Compiler *--
 local Compiler = {}
@@ -1197,7 +1198,6 @@ function Compiler.compile(ast)
       local opcode = COMPILER_SIMPLE_ARICHMETIC_OPERATOR_LOOKUP[nodeOperator]
                      or COMPILER_CONDITIONAL_OPERATOR_LOOKUP[nodeOperator]
                      or COMPILER_CONTROL_FLOW_OPERATOR_LOOKUP[nodeOperator]
-      if not opcode then error("Unsupported binary operator: " .. tostring(nodeOperator)) end
       if COMPILER_SIMPLE_ARICHMETIC_OPERATOR_LOOKUP[nodeOperator] then
         local leftExpressionRegister = processExpressionNode(node.Left)
         local rightExpressionRegister = processExpressionNode(node.Right)
@@ -1210,7 +1210,7 @@ function Compiler.compile(ast)
         local jumpInstruction, jumpInstructionIndex = addInstruction("JMP", 0, 0) -- Placeholder
         processExpressionNode(node.Right, expressionRegister)
         jumpInstruction[3] = #code - jumpInstructionIndex
-      else
+      elseif NEGATIVE_CONDITIONAL_OPERATOR_LOOKUP[nodeOperator] or POSITIVE_CONDITIONAL_OPERATOR_LOOKUP[nodeOperator] then
         local leftExpressionRegister = processExpressionNode(node.Left)
         local rightExpressionRegister = processExpressionNode(node.Right)
         local isConditionTrue = (NEGATIVE_CONDITIONAL_OPERATOR_LOOKUP[nodeOperator] and 0) or 1
@@ -1219,6 +1219,16 @@ function Compiler.compile(ast)
         addInstruction("LOADBOOL", expressionRegister, 0, 1)
         addInstruction("LOADBOOL", expressionRegister, 1, 0)
         deallocateRegisters({ leftExpressionRegister, rightExpressionRegister })
+      elseif nodeOperator == ".." then
+        local leftExpressionRegister = processExpressionNode(node.Left)
+        local rightExpressionRegister = processExpressionNode(node.Right)
+        if (rightExpressionRegister - leftExpressionRegister) ~= 1 then
+          error("Concatenation requires consecutive registers")
+        end
+        addInstruction("CONCAT", expressionRegister, leftExpressionRegister, rightExpressionRegister)
+        deallocateRegisters({ leftExpressionRegister, rightExpressionRegister })
+      else
+        error("Unsupported binary operator: " .. tostring(nodeOperator))
       end
     elseif nodeType == "UnaryOperator" then
       local nodeOperator = node.Operator
