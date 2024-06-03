@@ -775,6 +775,7 @@ function Parser.parse(tokens)
       consume() -- Consume the last token of the last identifier
       expectCharacter("=")
       local expressions = consumeExpressions()
+      adjustMultiretNodes(expressions, #variables)
       declareLocalVariables(variables)
       return { TYPE = "LocalDeclaration", Variables = variables, Expressions = expressions }
     else
@@ -916,6 +917,7 @@ function Parser.parse(tokens)
     end
     expectCharacter("=")
     local expressions = consumeExpressions()
+    adjustMultiretNodes(expressions, #lvalues)
     return { TYPE = "VariableAssignment", LValues = lvalues, Expressions = expressions }
   end
   local function parseFunctionCallOrVariableAssignment()
