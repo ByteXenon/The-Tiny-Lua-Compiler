@@ -664,12 +664,12 @@ function Parser.parse(tokens)
     local unaryOperator = currentToken
     -- <unary> ::= <unary operator> <unary> | <primary>
     if not isUnaryOperator(currentToken) then
-      return parsePrefixExpression(UNARY_OPERATOR_PRECEDENCE)
+      return parsePrefixExpression(PARSER_UNARY_OPERATOR_PRECEDENCE)
     end
 
     -- <unary operator> <unary>
     consume() -- Consume the operator
-    local expression = parseBinaryExpression(UNARY_OPERATOR_PRECEDENCE)
+    local expression = parseBinaryExpression(PARSER_UNARY_OPERATOR_PRECEDENCE)
     return { TYPE = "UnaryOperator", Operator = unaryOperator.Value, Operand = expression }
   end
   function parseBinaryExpression(minPrecedence)
