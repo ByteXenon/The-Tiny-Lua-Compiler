@@ -1144,7 +1144,7 @@ function Compiler.compile(ast)
       deallocateRegister(nodeIndexRegister)
       local argumentRegisters = { selfArgumentRegister } -- Allocate the self register
       for index, argument in ipairs(node.Arguments) do
-        argumentRegisters[index] = processExpressionNode(argument)
+        table.insert(argumentRegisters, processExpressionNode(argument))
       end
       local returnAmount = node.ReturnValueAmount + 1
       local argumentAmount = #node.Arguments + 2
