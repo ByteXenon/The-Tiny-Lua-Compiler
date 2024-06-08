@@ -1400,7 +1400,14 @@ function Compiler.compile(ast)
       local expressions = node.Expressions
       local codeblock = node.Codeblock
       local iteratorRegisters = {}
+      local expressionRegisters = { processExpressionNode(expressions[1]) }
       local startJmpInstruction = addInstruction("JMP", 0, 0) -- Placeholder
+      local forGeneratorRegister = expressionRegisters[1]
+      local forStateRegister = expressionRegisters[2]
+      local forControlRegister = expressionRegisters[3]
+      if not (forGeneratorRegister and forStateRegister and forControlRegister) then
+        error("Expected 3 expression registers")
+      end
       registerVariable("(for generator)", forGeneratorRegister)
       registerVariable("(for state)", forStateRegister)
       registerVariable("(for control)", forControlRegister)
