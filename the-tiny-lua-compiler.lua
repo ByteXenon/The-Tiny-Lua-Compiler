@@ -1157,7 +1157,10 @@ function Compiler.compile(ast)
       processExpressionNode(node.Expression, expressionRegister)
       local argumentRegisters = {}
       for index, argument in ipairs(node.Arguments) do
-        argumentRegisters[index] = processExpressionNode(argument)
+        local currentArgumentRegisters = { processExpressionNode(argument) }
+        for _, register in ipairs(currentArgumentRegisters) do
+          table.insert(argumentRegisters, register)
+        end
       end
       local returnAmount = node.ReturnValueAmount + 1
       local argumentAmount = #node.Arguments + 1
@@ -1170,6 +1173,12 @@ function Compiler.compile(ast)
       end
       addInstruction("CALL", expressionRegister, argumentAmount, returnAmount)
       deallocateRegisters(argumentRegisters)
+      local returnRegisters = { expressionRegister }
+      for index = expressionRegister + 1, expressionRegister + node.ReturnValueAmount - 1 do
+        local register = allocateRegister()
+        table.insert(returnRegisters, index)
+      end
+      return unpack(returnRegisters)
     elseif nodeType == "MethodCall" then
       local nodeIndexIndex      = node.Expression.Index
       local nodeIndexExpression = node.Expression.Expression
@@ -1180,7 +1189,10 @@ function Compiler.compile(ast)
       deallocateRegister(nodeIndexRegister)
       local argumentRegisters = { selfArgumentRegister } -- Allocate the self register
       for index, argument in ipairs(node.Arguments) do
-        table.insert(argumentRegisters, processExpressionNode(argument))
+        local currentArgumentRegisters = { processExpressionNode(argument) }
+        for _, register in ipairs(currentArgumentRegisters) do
+          table.insert(argumentRegisters, register)
+        end
       end
       local returnAmount = node.ReturnValueAmount + 1
       local argumentAmount = #node.Arguments + 2
@@ -1284,8 +1296,8 @@ function Compiler.compile(ast)
   function processStatementNode(node)
     local nodeType = node.TYPE
     if nodeType == "FunctionCall" or nodeType == "MethodCall" then
-      local functionRegister = processExpressionNode(node)
-      deallocateRegister(functionRegister)
+      local functionRegisters = { processExpressionNode(node) }
+      deallocateRegisters(functionRegisters)
     elseif nodeType == "BreakStatement" then
       local jumpInstruction, jumpInstructionIndex = addInstruction("JMP", 0, 0) -- Placeholder
       table.insert(breakInstructions, jumpInstructionIndex)
@@ -1325,17 +1337,19 @@ function Compiler.compile(ast)
         processFunction(codeblock, localRegister, parameters, isVarArg)
       end
     elseif nodeType == "LocalDeclaration" then
-      local expressionRegisters = {}
+      local variableExpressionRegisters = {}
       for index, expression in ipairs(node.Expressions) do
-        local expressionRegister = processExpressionNode(expression)
-        table.insert(expressionRegisters, expressionRegister)
-        if not node.Variables[index] then
-          -- If this expression doesn't have a corresponding variable, deallocate it
-          deallocateRegister(expressionRegister)
+        local expressionRegisters = { processExpressionNode(expression) }
+        for index2, expressionRegister in ipairs(expressionRegisters) do
+          table.insert(variableExpressionRegisters, expressionRegister)
+          if not node.Variables[index + index2 - 1] then
+            -- If this expression doesn't have a corresponding variable, deallocate it
+            deallocateRegister(expressionRegister)
+          end
         end
       end
       for index, localName in ipairs(node.Variables) do
-        local expressionRegister = expressionRegisters[index]
+        local expressionRegister = variableExpressionRegisters[index]
         if not expressionRegister then
           -- Load nil into the register
           expressionRegister = allocateRegister()
@@ -1471,8 +1485,10 @@ function Compiler.compile(ast)
     elseif nodeType == "VariableAssignment" then
       local expressionRegisters = {}
       for index, expression in ipairs(node.Expressions) do
-        local expressionRegister = processExpressionNode(expression)
-        table.insert(expressionRegisters, expressionRegister)
+        local currentExpressionRegisters = { processExpressionNode(expression) }
+        for _, register in ipairs(currentExpressionRegisters) do
+          table.insert(expressionRegisters, register)
+        end
       end
       for index, lvalue in ipairs(node.LValues) do
         local lvalueType = lvalue.TYPE
@@ -1704,7 +1720,7 @@ function Compiler.compile(ast)
     return header .. functionHeader
   end
   local function compile()
-    newProto()
+    local proto = newProto()
     processCodeBlock(ast)
     addInstruction("RETURN", 0, 1) -- Default return statement
     return makeBytecode()
