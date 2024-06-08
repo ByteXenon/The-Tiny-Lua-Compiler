@@ -1199,6 +1199,12 @@ function Compiler.compile(ast)
       if returnAmount <= 0 then returnAmount = 0 end
       addInstruction("CALL", expressionRegister, argumentAmount, returnAmount)
       deallocateRegisters(argumentRegisters)
+      local returnRegisters = { expressionRegister }
+      for index = expressionRegister + 1, expressionRegister + node.ReturnValueAmount - 1 do
+        local register = allocateRegister()
+        table.insert(returnRegisters, index)
+      end
+      return unpack(returnRegisters)
     elseif nodeType == "Constant" then
       local nodeValue = node.Value
       if nodeValue ~= "nil" then
