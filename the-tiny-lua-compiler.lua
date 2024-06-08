@@ -1331,10 +1331,20 @@ function Compiler.compile(ast)
         deallocateRegisters({ expressionRegister, closureRegister })
         return
       end
-      local isLocal = expression.VariableType == "Local"
-      if isLocal then
+      if expression.VariableType == "Local" then
         local localRegister = locals[expression.Value]
         processFunction(codeblock, localRegister, parameters, isVarArg)
+      elseif expression.VariableType == "Upvalue" then
+        local upvalueIndex = findOrCreateUpvalue(expression.Value)
+        local closureRegister = allocateRegister()
+        processFunction(codeblock, closureRegister, parameters, isVarArg)
+        addInstruction("SETUPVAL", closureRegister, findOrCreateUpvalue(expression.Value))
+        deallocateRegister(closureRegister)
+      elseif expression.VariableType == "Global" then
+        local globalRegister = allocateRegister()
+        processFunction(codeblock, globalRegister, parameters, isVarArg)
+        addInstruction("SETGLOBAL", globalRegister, findOrCreateConstant(expression.Value))
+        deallocateRegister(globalRegister)
       end
     elseif nodeType == "LocalDeclaration" then
       local variableExpressionRegisters = {}
@@ -1390,11 +1400,7 @@ function Compiler.compile(ast)
       local expressions = node.Expressions
       local codeblock = node.Codeblock
       local iteratorRegisters = {}
-      local expressionRegister = processExpressionNode(expressions[1])
       local startJmpInstruction = addInstruction("JMP", 0, 0) -- Placeholder
-      local forGeneratorRegister = expressionRegister
-      local forStateRegister = allocateRegister()
-      local forControlRegister = allocateRegister()
       registerVariable("(for generator)", forGeneratorRegister)
       registerVariable("(for state)", forStateRegister)
       registerVariable("(for control)", forControlRegister)
