@@ -506,7 +506,7 @@ function Parser.parse(tokens)
   local function adjustMultiretNodes(nodeList, expectedReturnAmount)
     local lastNode = nodeList[#nodeList]
     local extra = expectedReturnAmount - #nodeList
-    if lastNode and (lastNode.TYPE == "Vararg" or lastNode.TYPE == "FunctionCall") then
+    if lastNode and (lastNode.TYPE == "Vararg" or lastNode.TYPE == "FunctionCall" or lastNode.TYPE == "MethodCall") then
       extra = extra + 1
       if extra < 0 then extra = -1 end
       lastNode.ReturnValueAmount = extra
