@@ -98,7 +98,6 @@ local function makeTrie(table)
 end
 
 --/// Tokenizer ///--
-local TOKENIZER_LUA_CONSTANTS = { "true", "false", "nil" }
 local TOKENIZER_LUA_OPERATORS = {
   "^", "*", "/", "%",
   "+", "-", "<", ">",
@@ -121,15 +120,13 @@ local TOKENIZER_ESCAPED_CHARACTER_CONVERSIONS = {
   [ "\'" ] = "\'",  -- single quote
 }
 
-local TOKENIZER_RESERVED_KEYWORDS = { "while",    "do",     "end",   "for",
-                                      "local",    "repeat", "until", "return",
-                                      "in",       "if",     "else",  "elseif",
-                                      "function", "then",   "break", "continue" }
-
-local TOKENIZER_LUA_CONSTANTS_LOOKUP     = createLookupTable(TOKENIZER_LUA_CONSTANTS)
-local TOKENIZER_LUA_OPERATORS_LOOKUP     = createLookupTable(TOKENIZER_LUA_OPERATORS)
-local TOKENIZER_RESERVED_KEYWORDS_LOOKUP = createLookupTable(TOKENIZER_RESERVED_KEYWORDS)
-
+local TOKENIZER_LUA_CONSTANTS_LOOKUP     = createLookupTable({ "true", "false", "nil" })
+local TOKENIZER_RESERVED_KEYWORDS_LOOKUP = createLookupTable({
+"while",    "do",     "end",   "for",
+"local",    "repeat", "until", "return",
+"in",       "if",     "else",  "elseif",
+"function", "then",   "break", "continue" })
+local TOKENIZER_LUA_OPERATORS_LOOKUP                      = createLookupTable(TOKENIZER_LUA_OPERATORS)
 local TOKENIZER_OPERATOR_TRIE, TOKENIZER_OPERATOR_LONGEST = makeTrie(TOKENIZER_LUA_OPERATORS)
 
 --* Tokenizer *--
@@ -451,10 +448,7 @@ function Parser.parse(tokens)
     for scopeIndex = #scopeStack, 1, -1 do
       local scope = scopeStack[scopeIndex]
       if scope.localVariables[variableName] then
-        if isUpvalue then
-          return "Upvalue", scopeIndex
-        end
-        return "Local", scopeIndex
+        return (isUpvalue and "Upvalue") or "Local", scopeIndex
       elseif scope.isFunctionScope then
         isUpvalue = true
       end
@@ -995,48 +989,29 @@ local MODE_iABC = 0
 local MODE_iABx = 1
 local MODE_iAsBx = 2
 
-local COMPILER_OPCODE_TO_NUMBER_LOOKUP = {
-  ["MOVE"]     = 0,  ["LOADK"]     = 1,  ["LOADBOOL"] = 2,  ["LOADNIL"]   = 3,
-  ["GETUPVAL"] = 4,  ["GETGLOBAL"] = 5,  ["GETTABLE"] = 6,  ["SETGLOBAL"] = 7,
-  ["SETUPVAL"] = 8,  ["SETTABLE"]  = 9,  ["NEWTABLE"] = 10, ["SELF"]      = 11,
-  ["ADD"]      = 12, ["SUB"]       = 13, ["MUL"]      = 14, ["DIV"]       = 15,
-  ["MOD"]      = 16, ["POW"]       = 17, ["UNM"]      = 18, ["NOT"]       = 19,
-  ["LEN"]      = 20, ["CONCAT"]    = 21, ["JMP"]      = 22, ["EQ"]        = 23,
-  ["LT"]       = 24, ["LE"]        = 25, ["TEST"]     = 26, ["TESTSET"]   = 27,
-  ["CALL"]     = 28, ["TAILCALL"]  = 29, ["RETURN"]   = 30, ["FORLOOP"]   = 31,
-  ["FORPREP"]  = 32, ["TFORLOOP"]  = 33, ["SETLIST"]  = 34, ["CLOSE"]     = 35,
-  ["CLOSURE"]  = 36, ["VARARG"]    = 37
-}
-local COMPILER_OPMODES = {
-  [0] = MODE_iABC,  [1]  = MODE_iABx,  [2]  = MODE_iABC,
-  [3] = MODE_iABC,  [4]  = MODE_iABC,  [5]  = MODE_iABx,
-  [6] = MODE_iABC,  [7]  = MODE_iABx,  [8]  = MODE_iABC,
-  [9] = MODE_iABC,  [10] = MODE_iABC,  [11] = MODE_iABC,
-  [12] = MODE_iABC, [13] = MODE_iABC,  [14] = MODE_iABC,
-  [15] = MODE_iABC, [16] = MODE_iABC,  [17] = MODE_iABC,
-  [18] = MODE_iABC, [19] = MODE_iABC,  [20] = MODE_iABC,
-  [21] = MODE_iABC, [22] = MODE_iAsBx, [23] = MODE_iABC,
-  [24] = MODE_iABC, [25] = MODE_iABC,  [26] = MODE_iABC,
-  [27] = MODE_iABC, [28] = MODE_iABC,  [29] = MODE_iABC,
-  [30] = MODE_iABC, [31] = MODE_iAsBx, [32] = MODE_iAsBx,
-  [33] = MODE_iABC, [34] = MODE_iABC,  [35] = MODE_iABC,
-  [36] = MODE_iABx, [37] = MODE_iABC
+local COMPILER_OPCODE_LOOKUP = {
+  ["MOVE"]     = {0, MODE_iABC},  ["LOADK"]     = {1, MODE_iABx},  ["LOADBOOL"] = {2, MODE_iABC},  ["LOADNIL"]   = {3, MODE_iABC},
+  ["GETUPVAL"] = {4, MODE_iABC},  ["GETGLOBAL"] = {5, MODE_iABx},  ["GETTABLE"] = {6, MODE_iABC},  ["SETGLOBAL"] = {7, MODE_iABx},
+  ["SETUPVAL"] = {8, MODE_iABC},  ["SETTABLE"]  = {9, MODE_iABC},  ["NEWTABLE"] = {10, MODE_iABC}, ["SELF"]      = {11, MODE_iABC},
+  ["ADD"]      = {12, MODE_iABC}, ["SUB"]       = {13, MODE_iABC}, ["MUL"]      = {14, MODE_iABC}, ["DIV"]       = {15, MODE_iABC},
+  ["MOD"]      = {16, MODE_iABC}, ["POW"]       = {17, MODE_iABC}, ["UNM"]      = {18, MODE_iABC}, ["NOT"]       = {19, MODE_iABC},
+  ["LEN"]      = {20, MODE_iABC}, ["CONCAT"]    = {21, MODE_iABC}, ["JMP"]      = {22, MODE_iAsBx},["EQ"]        = {23, MODE_iABC},
+  ["LT"]       = {24, MODE_iABC}, ["LE"]        = {25, MODE_iABC}, ["TEST"]     = {26, MODE_iABC}, ["TESTSET"]   = {27, MODE_iABC},
+  ["CALL"]     = {28, MODE_iABC}, ["TAILCALL"]  = {29, MODE_iABC}, ["RETURN"]   = {30, MODE_iABC}, ["FORLOOP"]   = {31, MODE_iAsBx},
+  ["FORPREP"]  = {32, MODE_iAsBx},["TFORLOOP"]  = {33, MODE_iABC}, ["SETLIST"]  = {34, MODE_iABC}, ["CLOSE"]     = {35, MODE_iABC},
+  ["CLOSURE"]  = {36, MODE_iABx}, ["VARARG"]    = {37, MODE_iABC}
 }
 
 local COMPILER_SIMPLE_ARICHMETIC_OPERATOR_LOOKUP = {
-  ["+"] = "ADD", ["-"] = "SUB", ["*"] = "MUL", ["/"] = "DIV",
+  ["+"] = "ADD", ["-"] = "SUB",
+  ["*"] = "MUL", ["/"] = "DIV",
   ["%"] = "MOD", ["^"] = "POW"
 }
-local COMPILER_UNARY_OPERATOR_LOOKUP = {
-  ["-"] = "UNM", ["#"] = "LEN", ["not"] = "NOT"
-}
+local COMPILER_UNARY_OPERATOR_LOOKUP = { ["-"] = "UNM", ["#"] = "LEN", ["not"] = "NOT" }
 local COMPILER_COMPARISON_INSTRUCTION_LOOKUP = {
-  ["=="] = {"EQ", 1},
-  ["~="] = {"EQ", 0},
-  ["<"]  = {"LT", 1},
-  [">"]  = {"LT", 1},
-  ["<="] = {"LE", 1},
-  [">="] = {"LE", 1}
+  ["=="] = {"EQ", 1}, ["~="] = {"EQ", 0},
+  ["<"]  = {"LT", 1}, [">"]  = {"LT", 1},
+  ["<="] = {"LE", 1}, [">="] = {"LE", 1}
 }
 local COMPILER_COMPARISON_OPERATOR_LOOKUP = createLookupTable({"==", "~=", "<", ">", "<=", ">="})
 local COMPILER_CONTROL_FLOW_OPERATOR_LOOKUP = createLookupTable({"and", "or"})
@@ -1116,7 +1091,7 @@ function Compiler.compile(ast)
     end
     return "Global"
   end
-  local function findVariableRegister(localName, allowNil)
+  local function findVariableRegister(localName)
     local scope = currentScope
     while scope do
       local variableRegister = scope.locals[localName]
@@ -1128,9 +1103,7 @@ function Compiler.compile(ast)
       local previousScope = scope.previousScope
       scope = previousScope
     end
-    if not allowNil then
-      error("Could not find variable: " .. localName)
-    end
+    error("Could not find variable: " .. localName)
     return nil
   end
   local function registerVariable(localName, register)
@@ -1316,7 +1289,7 @@ function Compiler.compile(ast)
         local rightExpressionRegister = processExpressionNode(node.Right)
         local instruction, flag = unpack(COMPILER_COMPARISON_INSTRUCTION_LOOKUP[nodeOperator])
         if nodeOperator == ">" or nodeOperator == ">=" then
-            leftExpressionRegister, rightExpressionRegister = rightExpressionRegister, leftExpressionRegister
+          leftExpressionRegister, rightExpressionRegister = rightExpressionRegister, leftExpressionRegister
         end
         addInstruction(instruction, flag, leftExpressionRegister, rightExpressionRegister)
         addInstruction("JMP", 0, 1)
@@ -1528,12 +1501,10 @@ function Compiler.compile(ast)
       for _, elseifNode in ipairs(node.ElseIfs) do
         table.insert(conditionCodeblockStatements, elseifNode)
       end
-
       local jumpToEndInstructions = {}
       for index, conditionCodeblockStatement in ipairs(conditionCodeblockStatements) do
         local condition = conditionCodeblockStatement.Condition
         local codeBlock = conditionCodeblockStatement.Codeblock
-
         local conditionRegister = processExpressionNode(condition)
         addInstruction("TEST", conditionRegister, 0, 0)
         local conditionJumpInstruction, conditionJumpInstructionIndex = addInstruction("JMP", 0, 0) -- Placeholder
@@ -1634,32 +1605,25 @@ function Compiler.compile(ast)
     end
     return value
   end
+  local function makeBytes(value, byteCount)
+    local bytes = {}
+    for i = 1, byteCount do
+      bytes[i] = value % 256
+      value = math.floor(value / 256)
+    end
+    return string.char(unpack(bytes))
+  end
   local function makeOneByte(value)
     return string.char(value % 256)
   end
   local function makeTwoBytes(value)
-    local bytes = {}
-    for i = 1, 2 do
-      bytes[i] = value % 256
-      value = math.floor(value / 256)
-    end
-    return string.char(unpack(bytes))
+    return makeBytes(value, 2)
   end
   local function makeFourBytes(value)
-    local bytes = {}
-    for i = 1, 4 do
-      bytes[i] = value % 256
-      value = math.floor(value / 256)
-    end
-    return string.char(unpack(bytes))
+    return makeBytes(value, 4)
   end
   local function makeEightBytes(value)
-    local bytes = {}
-    for i = 1, 8 do
-      bytes[i] = value % 256
-      value = math.floor(value / 256)
-    end
-    return string.char(unpack(bytes))
+    return makeBytes(value, 8)
   end
   local function makeDouble(value)
     local sign = (value < 0 and 1) or 0
@@ -1711,29 +1675,21 @@ function Compiler.compile(ast)
     end
   end
   function makeInstruction(instruction)
-    local opcode = COMPILER_OPCODE_TO_NUMBER_LOOKUP[instruction[1]]
-    local opmode = COMPILER_OPMODES[opcode]
-    local mode = opmode
-    local instructionNumber = 0
+    local opcodeTable = COMPILER_OPCODE_LOOKUP[instruction[1]]
+    local opcode, opmode = unpack(opcodeTable)
+    local a = twosComplement(instruction[2])
+    local instructionNumber = opcode
+    instructionNumber = instructionNumber + (a * 64) -- a << 6
     if opmode == MODE_iABC then
-      local a = twosComplement(instruction[2])
       local b = twosComplement(instruction[3])
       local c = twosComplement(instruction[4])
-      instructionNumber = instructionNumber + opcode
-      instructionNumber = instructionNumber + (a * 64) -- a << 6
       instructionNumber = instructionNumber + (b * 8388608) -- b << 23
-      instructionNumber = instructionNumber + (c * 16384) -- c << 14
+      instructionNumber = instructionNumber + (c * 16384)   -- c << 14
     elseif opmode == MODE_iABx then
-      local a = twosComplement(instruction[2])
       local b = twosComplement(instruction[3])
-      instructionNumber = instructionNumber + opcode
-      instructionNumber = instructionNumber + (a * 64) -- a << 6
       instructionNumber = instructionNumber + (b * 16384) -- b << 14
     elseif opmode == MODE_iAsBx then
-      local a = twosComplement(instruction[2])
       local b = instruction[3]
-      instructionNumber = instructionNumber + opcode
-      instructionNumber = instructionNumber + (a * 64) -- a << 6
       instructionNumber = instructionNumber + ((b + 131071) * 16384) -- (b + 131071) << 14
     end
     return makeFourBytes(instructionNumber)
@@ -1766,10 +1722,8 @@ function Compiler.compile(ast)
     functionHeader = functionHeader .. makeOneByte(numParams) -- Number of parameters
     functionHeader = functionHeader .. makeOneByte((isVarArg and 2) or 0) -- Is vararg
     functionHeader = functionHeader .. makeOneByte(128) -- Max stack size
-
     functionHeader = functionHeader .. makeCodeSection()
     functionHeader = functionHeader .. makeConstantSection()
-
     functionHeader = functionHeader .. makeFourBytes(0) -- Line info
     functionHeader = functionHeader .. makeFourBytes(0) -- Local variables
     functionHeader = functionHeader .. makeFourBytes(0) -- Upvalues
