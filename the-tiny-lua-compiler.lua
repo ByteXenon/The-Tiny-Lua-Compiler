@@ -1027,18 +1027,19 @@ local COMPILER_SIMPLE_ARICHMETIC_OPERATOR_LOOKUP = {
   ["+"] = "ADD", ["-"] = "SUB", ["*"] = "MUL", ["/"] = "DIV",
   ["%"] = "MOD", ["^"] = "POW"
 }
-local COMPILER_CONDITIONAL_OPERATOR_LOOKUP = {
-  ["=="] = "EQ", ["~="] = "EQ",
-  ["<"]  = "LT", [">"]  = "LT",
-  ["<="] = "LE", [">="] = "LE"
-}
 local COMPILER_UNARY_OPERATOR_LOOKUP = {
   ["-"] = "UNM", ["#"] = "LEN", ["not"] = "NOT"
 }
-
+local COMPILER_COMPARISON_INSTRUCTION_LOOKUP = {
+  ["=="] = {"EQ", 1},
+  ["~="] = {"EQ", 0},
+  ["<"]  = {"LT", 1},
+  [">"]  = {"LT", 1},
+  ["<="] = {"LE", 1},
+  [">="] = {"LE", 1}
+}
+local COMPILER_COMPARISON_OPERATOR_LOOKUP = createLookupTable({"==", "~=", "<", ">", "<=", ">="})
 local COMPILER_CONTROL_FLOW_OPERATOR_LOOKUP = createLookupTable({"and", "or"})
-local NEGATIVE_CONDITIONAL_OPERATOR_LOOKUP = createLookupTable({"~=", ">", ">="})
-local POSITIVE_CONDITIONAL_OPERATOR_LOOKUP = createLookupTable({"==", "<", "<="})
 
 --* Compiler *--
 local Compiler = {}
@@ -1296,7 +1297,7 @@ function Compiler.compile(ast)
     elseif nodeType == "BinaryOperator" then
       local nodeOperator = node.Operator
       local opcode = COMPILER_SIMPLE_ARICHMETIC_OPERATOR_LOOKUP[nodeOperator]
-                     or COMPILER_CONDITIONAL_OPERATOR_LOOKUP[nodeOperator]
+                     or COMPILER_COMPARISON_OPERATOR_LOOKUP[nodeOperator]
                      or COMPILER_CONTROL_FLOW_OPERATOR_LOOKUP[nodeOperator]
       if COMPILER_SIMPLE_ARICHMETIC_OPERATOR_LOOKUP[nodeOperator] then
         local leftExpressionRegister = processExpressionNode(node.Left)
@@ -1310,11 +1311,14 @@ function Compiler.compile(ast)
         local jumpInstruction, jumpInstructionIndex = addInstruction("JMP", 0, 0) -- Placeholder
         processExpressionNode(node.Right, expressionRegister)
         jumpInstruction[3] = #code - jumpInstructionIndex
-      elseif NEGATIVE_CONDITIONAL_OPERATOR_LOOKUP[nodeOperator] or POSITIVE_CONDITIONAL_OPERATOR_LOOKUP[nodeOperator] then
+      elseif COMPILER_COMPARISON_OPERATOR_LOOKUP[nodeOperator] then
         local leftExpressionRegister = processExpressionNode(node.Left)
         local rightExpressionRegister = processExpressionNode(node.Right)
-        local isConditionTrue = (NEGATIVE_CONDITIONAL_OPERATOR_LOOKUP[nodeOperator] and 0) or 1
-        addInstruction(opcode, isConditionTrue, leftExpressionRegister, rightExpressionRegister)
+        local instruction, flag = unpack(COMPILER_COMPARISON_INSTRUCTION_LOOKUP[nodeOperator])
+        if nodeOperator == ">" or nodeOperator == ">=" then
+            leftExpressionRegister, rightExpressionRegister = rightExpressionRegister, leftExpressionRegister
+        end
+        addInstruction(instruction, flag, leftExpressionRegister, rightExpressionRegister)
         addInstruction("JMP", 0, 1)
         addInstruction("LOADBOOL", expressionRegister, 0, 1)
         addInstruction("LOADBOOL", expressionRegister, 1, 0)
