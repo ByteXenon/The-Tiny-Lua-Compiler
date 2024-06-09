@@ -40,7 +40,7 @@ Ouch, I'm really sorry. Let me know how it can be improved, by emailing me at dd
 
 ### Example usage?
 
-Currently, this project is not fully complete. However, when it'll be, you will be able to use it like this:
+Currently, the compiler only supports Lua 5.1. Here's an example of how you can use it:
 
 ```lua
 local tlc = require("the-tiny-lua-compiler")
