@@ -120,6 +120,7 @@ local TOKENIZER_ESCAPED_CHARACTER_CONVERSIONS = {
   [ "\"" ] = "\"",  -- double quote
   [ "\'" ] = "\'",  -- single quote
 }
+
 local TOKENIZER_RESERVED_KEYWORDS = { "while",    "do",     "end",   "for",
                                       "local",    "repeat", "until", "return",
                                       "in",       "if",     "else",  "elseif",
@@ -1142,7 +1143,9 @@ function Compiler.compile(ast)
   end
   local function exitScope()
     table.remove(scopes)
-    unregisterVariables(currentScope.locals)
+    for variableName, register in pairs(currentScope.locals) do
+      unregisterVariable(variableName)
+    end
     if #scopes > 0 then
       currentScope = scopes[#scopes]
       locals = currentScope.locals
