@@ -1102,6 +1102,19 @@ function Compiler.compile(ast)
   end
 
   --// VARIABLE MANAGEMENT //--
+  local function getVariableType(variableName)
+    local scope = currentScope
+    local isUpvalue = false
+    while scope do
+      if scope.locals[variableName] then
+        return (isUpvalue and "Upvalue") or "Local"
+      elseif scope.isFunctionScope then
+        isUpvalue = true
+      end
+      scope = scope.previousScope
+    end
+    return "Global"
+  end
   local function findVariableRegister(localName, allowNil)
     local scope = currentScope
     while scope do
@@ -1131,9 +1144,10 @@ function Compiler.compile(ast)
   end
 
   --// SCOPE MANAGEMENT //--
-  local function enterScope()
+  local function enterScope(isFunctionScope)
     local newScope = {
       locals = {},
+      isFunctionScope = true,
       previousScope = scopes[#scopes]
     }
     locals = newScope.locals
@@ -1606,13 +1620,12 @@ function Compiler.compile(ast)
     addInstruction("CLOSURE", expressionRegister, #protos - 1)
 
     for index, upvalueName in ipairs(proto.upvalues) do
-      local variableRegister = findVariableRegister(upvalueName, true)
-      local isLocal = variableRegister ~= nil
-      if isLocal then
-        addInstruction("MOVE", 0, variableRegister)
-      else
+      local upvalueType = getVariableType(upvalueName)
+      if upvalueType == "Local" then
+        addInstruction("MOVE", 0, findVariableRegister(upvalueName))
+      elseif upvalueType == "Upvalue" then
         addInstruction("GETUPVAL", 0, findOrCreateUpvalue(upvalueName))
-      end
+      else error("Unsupported upvalue type: " .. upvalueType) end
     end
     return proto
   end
