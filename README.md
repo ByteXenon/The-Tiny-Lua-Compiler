@@ -7,8 +7,10 @@
 This is an ultra-simplified example of all the major pieces of a modern compiler
 written in easy to read Lua code.
 
-Reading through the guided code will help you learn about how *most* compilers
-work from end to end.
+## Features
+
+- **Self-compiling**: This compiler can compile itself!
+- **Educational**: Reading through the guided code will help you learn about how *most* compilers work from end to end.
 
 ### [Want to jump into the code? Click here](the-tiny-lua-compiler.lua)
 
@@ -41,14 +43,20 @@ Ouch, I'm really sorry. Let me know how it can be improved, by emailing me at dd
 Currently, this project is not fully complete. However, when it'll be, you will be able to use it like this:
 
 ```lua
-local theTinyLuaCompiler = require("the-tiny-lua-compiler")
+local tlc = require("the-tiny-lua-compiler")
 
 -- Compile the input code
-local inputCode = "local b = 10; print(b)"
-local outputBytecode = theTinyLuaCompiler(inputCode)
+local inputCode = [[
+  for index = 1, 10 do
+    print(index)
+  end
+  print("Hello, World!")
+]]
+local tokens = tlc.Tokenizer.tokenize(inputCode)
+local ast = tlc.Parser.parse(tokens)
+local outputBytecode = tlc.Compiler.compile(ast)
 
-local loadFunction = (loadstring or load) -- Older Lua versions compatibility
-local compiledFunction = loadFunction(outputBytecode)
+local compiledFunction = loadstring(outputBytecode)
 
 -- Run the compiled function
 compiledFunction()
