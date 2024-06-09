@@ -1,0 +1,23 @@
+name: Lua Script Test
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Set up Lua
+      uses: leafo/gh-actions-lua@v8
+      with:
+        luaVersion: "5.4.0"
+
+    - name: Run script
+      run: |
+        bash ./test.sh
