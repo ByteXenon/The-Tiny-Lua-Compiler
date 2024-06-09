@@ -1043,15 +1043,16 @@ local POSITIVE_CONDITIONAL_OPERATOR_LOOKUP = createLookupTable({"==", "<", "<="}
 local Compiler = {}
 function Compiler.compile(ast)
   local breakInstructions
+  local locals, currentScope
+  local scopes = {}
   local currentProto
-  local locals, takenRegisters, code, constants,
+  local takenRegisters, code, constants,
         constantLookup, upvalues, upvalueLookup,
         protos, numParams, isVarArg, functionName
 
   --// PROTO MANAGEMENT //--
   local function setProto(proto)
     currentProto   = proto
-    locals         = proto.locals
     takenRegisters = proto.takenRegisters
     code           = proto.code
     constants      = proto.constants
@@ -1065,7 +1066,6 @@ function Compiler.compile(ast)
   end
   local function newProto()
     currentProto = {
-      locals         = {},
       takenRegisters = {},
       code           = {},
       constants      = {},
@@ -1100,6 +1100,55 @@ function Compiler.compile(ast)
     end
   end
 
+  --// VARIABLE MANAGEMENT //--
+  local function findVariableRegister(localName, allowNil)
+    local scope = currentScope
+    while scope do
+      local variableRegister = scope.locals[localName]
+      if variableRegister then
+        return variableRegister
+      end
+      local previousScope = scope.previousScope
+      scope = previousScope
+    end
+    if not allowNil then
+      error("Could not find variable: " .. localName)
+    end
+    return nil
+  end
+  local function registerVariable(localName, register)
+    locals[localName] = register
+  end
+  local function unregisterVariable(localName)
+    deallocateRegister(locals[localName])
+    locals[localName] = nil
+  end
+  local function unregisterVariables(variables)
+    for _, variable in ipairs(variables) do
+      unregisterVariable(variable)
+    end
+  end
+
+  --// SCOPE MANAGEMENT //--
+  local function enterScope()
+    local newScope = {
+      locals = {},
+      previousScope = scopes[#scopes]
+    }
+    locals = newScope.locals
+    table.insert(scopes, newScope)
+    currentScope = newScope
+    return newScope
+  end
+  local function exitScope()
+    table.remove(scopes)
+    unregisterVariables(currentScope.locals)
+    if #scopes > 0 then
+      currentScope = scopes[#scopes]
+      locals = currentScope.locals
+    end
+  end
+
   --// UTILITY FUNCTIONS //--
   local function findOrCreateConstant(value)
     if constantLookup[value] then
@@ -1123,17 +1172,6 @@ function Compiler.compile(ast)
     local instruction = { opname, a, b, c }
     table.insert(code, instruction)
     return instruction, #code
-  end
-  local function registerVariable(localName, register)
-    locals[localName] = register
-  end
-  local function unregisterVariable(localName)
-    locals[localName] = nil
-  end
-  local function unregisterVariables(variables)
-    for _, variable in ipairs(variables) do
-      unregisterVariable(variable)
-    end
   end
 
   --// CODE GENERATION //--
@@ -1243,7 +1281,8 @@ function Compiler.compile(ast)
       if variableType == "Global" then
         addInstruction("GETGLOBAL", expressionRegister, findOrCreateConstant(node.Value))
       elseif variableType == "Local" then
-        addInstruction("MOVE", expressionRegister, locals[node.Value])
+        local variableRegister = findVariableRegister(node.Value)
+        addInstruction("MOVE", expressionRegister, variableRegister)
       elseif variableType == "Upvalue" then
         addInstruction("GETUPVAL", expressionRegister, findOrCreateUpvalue(node.Value))
       end
@@ -1338,7 +1377,7 @@ function Compiler.compile(ast)
         return
       end
       if expression.VariableType == "Local" then
-        local localRegister = locals[expression.Value]
+        local localRegister = findVariableRegister(expression.Value)
         processFunction(codeblock, localRegister, parameters, isVarArg)
       elseif expression.VariableType == "Upvalue" then
         local upvalueIndex = findOrCreateUpvalue(expression.Value)
@@ -1517,7 +1556,8 @@ function Compiler.compile(ast)
           local expressionRegister = expressionRegisters[index]
           if not expressionRegister then error("Expected an expression for assignment") end
           if variableType == "Local" then
-            addInstruction("MOVE", locals[variableName], expressionRegister)
+            local variableRegister = findVariableRegister(variableName)
+            addInstruction("MOVE", variableRegister, expressionRegister)
           elseif variableType == "Global" then
             addInstruction("SETGLOBAL", expressionRegister, findOrCreateConstant(variableName))
           elseif variableType == "Upvalue" then
@@ -1540,9 +1580,11 @@ function Compiler.compile(ast)
     end
   end
   function processCodeBlock(list)
+    enterScope()
     for index, node in ipairs(list) do
       processStatementNode(node)
     end
+    exitScope()
   end
   function processFunction(codeBlock, expressionRegister, parameters, isVarArg)
     local oldProto  = currentProto
@@ -1560,9 +1602,10 @@ function Compiler.compile(ast)
     addInstruction("CLOSURE", expressionRegister, #protos - 1)
 
     for index, upvalueName in ipairs(proto.upvalues) do
-      local isLocal = locals[upvalueName] ~= nil
+      local variableRegister = findVariableRegister(upvalueName, true)
+      local isLocal = variableRegister ~= nil
       if isLocal then
-        addInstruction("MOVE", 0, locals[upvalueName])
+        addInstruction("MOVE", 0, variableRegister)
       else
         addInstruction("GETUPVAL", 0, findOrCreateUpvalue(upvalueName))
       end
