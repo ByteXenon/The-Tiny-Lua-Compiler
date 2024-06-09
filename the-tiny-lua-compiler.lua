@@ -1121,6 +1121,8 @@ function Compiler.compile(ast)
       local variableRegister = scope.locals[localName]
       if variableRegister then
         return variableRegister
+      elseif scope.isFunctionScope then
+        break
       end
       local previousScope = scope.previousScope
       scope = previousScope
@@ -1147,7 +1149,7 @@ function Compiler.compile(ast)
   local function enterScope(isFunctionScope)
     local newScope = {
       locals = {},
-      isFunctionScope = true,
+      isFunctionScope = isFunctionScope,
       previousScope = scopes[#scopes]
     }
     locals = newScope.locals
@@ -1597,8 +1599,13 @@ function Compiler.compile(ast)
       error("Unsupported statement node type: " .. tostring(nodeType))
     end
   end
-  function processCodeBlock(list)
-    enterScope()
+  function processCodeBlock(list, isFunctionScope, parameters)
+    enterScope(isFunctionScope)
+    if parameters then
+      for _, parameter in ipairs(parameters) do
+        registerVariable(parameter, allocateRegister())
+      end
+    end
     for index, node in ipairs(list) do
       processStatementNode(node)
     end
@@ -1609,10 +1616,7 @@ function Compiler.compile(ast)
     local proto     = newProto()
     proto.numParams = #parameters
 
-    for _, parameter in ipairs(parameters) do
-      registerVariable(parameter, allocateRegister())
-    end
-    processCodeBlock(codeBlock)
+    processCodeBlock(codeBlock, true, parameters)
 
     addInstruction("RETURN", 0, 1) -- Default return statement
     setProto(oldProto)
