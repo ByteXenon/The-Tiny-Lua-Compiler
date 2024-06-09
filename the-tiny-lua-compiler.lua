@@ -1450,6 +1450,7 @@ function Compiler.compile(ast)
       local iteratorRegisters = {}
       local expressionRegisters = { processExpressionNode(expressions[1]) }
       local startJmpInstruction = addInstruction("JMP", 0, 0) -- Placeholder
+      local expressionRegister = expressionRegisters[1]
       local forGeneratorRegister = expressionRegisters[1]
       local forStateRegister = expressionRegisters[2]
       local forControlRegister = expressionRegisters[3]
