@@ -1277,23 +1277,11 @@ function Compiler.compile(ast)
     elseif nodeType == "Table" then
       local elements = node.Elements
       addInstruction("NEWTABLE", expressionRegister, 0, 0)
-      local temporaryRegisters = {}
-      local numberOfImplicitKeys = 0
       for _, element in ipairs(elements) do
-        if element.IsImplicitKey then
-          table.insert(temporaryRegisters, processExpressionNode(element.Value))
-          numberOfImplicitKeys = numberOfImplicitKeys + 1
-        end
-      end
-      addInstruction("SETLIST", expressionRegister, numberOfImplicitKeys, 1)
-      deallocateRegisters(temporaryRegisters)
-      for _, element in ipairs(elements) do
-        if not element.IsImplicitKey then
-          local valueRegister = processExpressionNode(element.Value)
-          local keyRegister = processExpressionNode(element.Key)
-          deallocateRegisters({ valueRegister, keyRegister })
-          addInstruction("SETTABLE", expressionRegister, keyRegister, valueRegister)
-        end
+        local valueRegister = processExpressionNode(element.Value)
+        local keyRegister = processExpressionNode(element.Key)
+        deallocateRegisters({ valueRegister, keyRegister })
+        addInstruction("SETTABLE", expressionRegister, keyRegister, valueRegister)
       end
     elseif nodeType == "Variable" then
       local variableType = node.VariableType
