@@ -64,7 +64,7 @@ compiledFunction()
 
 ### Tests
 
-Run with `lua test.lua`
+Run with `lua tests/test.lua`
 
 ---
 

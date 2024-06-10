@@ -20,4 +20,4 @@ jobs:
 
     - name: Run script
       run: |
-        bash ./test.sh
+        bash tests/test.sh
