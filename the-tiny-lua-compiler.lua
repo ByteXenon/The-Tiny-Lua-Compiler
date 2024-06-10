@@ -478,6 +478,10 @@ function Parser.parse(tokens)
     local nodeType = node.TYPE
     return nodeType == "Variable" or nodeType == "TableIndex"
   end
+  local function isMultiretNode(node)
+    local nodeType = node.TYPE
+    return nodeType == "FunctionCall" or nodeType == "MethodCall" or nodeType == "Vararg"
+  end
 
   --// EXPECTORS //--
   local function expectTokenType(tokenType, dontConsume)
@@ -501,7 +505,7 @@ function Parser.parse(tokens)
   local function adjustMultiretNodes(nodeList, expectedReturnAmount)
     local lastNode = nodeList[#nodeList]
     local extra = expectedReturnAmount - #nodeList
-    if lastNode and (lastNode.TYPE == "Vararg" or lastNode.TYPE == "FunctionCall" or lastNode.TYPE == "MethodCall") then
+    if lastNode and isMultiretNode(lastNode) then
       extra = extra + 1
       if extra < 0 then extra = -1 end
       lastNode.ReturnValueAmount = extra
@@ -556,6 +560,7 @@ function Parser.parse(tokens)
   local function consumeTable()
     consume() -- Consume the "{" symbol
     local elements = {}
+    local lastImplicitElement
     local internalImplicitKey = 1
 
     -- Consume table elements
@@ -592,6 +597,13 @@ function Parser.parse(tokens)
       local shouldContinue = checkToken("Character", ",") or checkToken("Character", ";")
       if not shouldContinue then break end
       consume() -- Consume "," or ";"
+    end
+    local lastElement = elements[#elements]
+    if lastElement and lastElement.IsImplicitKey then
+      local lastElementTableValue = lastElement.Value.Value
+      if isMultiretNode(lastElementTableValue) then
+        lastElementTableValue.ReturnValueAmount = -1
+      end
     end
 
     return { TYPE = "Table", Elements = elements }
@@ -1252,10 +1264,29 @@ function Compiler.compile(ast)
       local elements = node.Elements
       addInstruction("NEWTABLE", expressionRegister, 0, 0)
       for _, element in ipairs(elements) do
-        local valueRegister = processExpressionNode(element.Value)
-        local keyRegister = processExpressionNode(element.Key)
-        deallocateRegisters({ valueRegister, keyRegister })
-        addInstruction("SETTABLE", expressionRegister, keyRegister, valueRegister)
+        if not element.IsImplicitKey then
+          local valueRegister = processExpressionNode(element.Value)
+          local keyRegister = processExpressionNode(element.Key)
+          deallocateRegisters({ valueRegister, keyRegister })
+          addInstruction("SETTABLE", expressionRegister, keyRegister, valueRegister)
+        end
+      end
+      local implicitKeyValues = {}
+      local lastImplicitElementValue
+      for _, element in ipairs(elements) do
+        if element.IsImplicitKey then
+          lastImplicitElementValue = element.Value
+          local valueRegister = processExpressionNode(element.Value)
+          table.insert(implicitKeyValues, valueRegister)
+        end
+      end
+      if #implicitKeyValues > 0 then
+        local implicitKeyAmount = #implicitKeyValues
+        if lastImplicitElementValue.Value.TYPE == "MethodCall" or lastImplicitElementValue.Value.TYPE == "FunctionCall" then
+          implicitKeyAmount = 0
+        end
+        addInstruction("SETLIST", expressionRegister, implicitKeyAmount, 1)
+        deallocateRegisters(implicitKeyValues)
       end
     elseif nodeType == "Variable" then
       local variableType = node.VariableType
