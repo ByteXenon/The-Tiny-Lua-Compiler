@@ -1256,8 +1256,8 @@ function Compiler.compile(ast)
         addInstruction("LOADNIL", expressionRegister, expressionRegister)
       end
     elseif nodeType == "TableIndex" then
-      local indexRegister = processExpressionNode(node.Index)
       processExpressionNode(node.Expression, expressionRegister)
+      local indexRegister = processExpressionNode(node.Index)
       addInstruction("GETTABLE", expressionRegister, expressionRegister, indexRegister)
       deallocateRegister(indexRegister)
     elseif nodeType == "Table" then
