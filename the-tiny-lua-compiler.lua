@@ -1367,8 +1367,8 @@ function Compiler.compile(ast)
       local parameters    = node.Parameters
       local isVarArg      = node.IsVarArg
       local localRegister = allocateRegister()
-      processFunction(codeblock, localRegister, parameters, isVarArg)
       registerVariable(name, localRegister)
+      processFunction(codeblock, localRegister, parameters, isVarArg)
     elseif nodeType == "FunctionDeclaration" then
       local expression         = node.Expression
       local fields             = node.Fields
