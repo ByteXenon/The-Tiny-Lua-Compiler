@@ -815,6 +815,7 @@ function Parser.parse(tokens)
   local function parseReturn()
     consume() -- Consume the "return" token
     local expressions = consumeExpressions()
+    adjustMultiretNodes(expressions, -1)
     return { TYPE = "ReturnStatement", Expressions = expressions }
   end
   local function parseBreak()
@@ -1500,7 +1501,12 @@ function Compiler.compile(ast)
         table.insert(expressionRegisters, expressionRegister)
       end
       local startRegister = expressionRegisters[1] or 0
-      addInstruction("RETURN", startRegister, #node.Expressions + 1, 0)
+      local returnAmount = #node.Expressions + 1
+      local lastExpression = node.Expressions[#node.Expressions]
+      if lastExpression and (lastExpression.TYPE == "FunctionCall" or lastExpression.TYPE == "MethodCall") then
+        returnAmount = 0
+      end
+      addInstruction("RETURN", startRegister, returnAmount, 0)
       deallocateRegisters(expressionRegisters)
     elseif nodeType == "WhileLoop" then
       local loopStart = #code
