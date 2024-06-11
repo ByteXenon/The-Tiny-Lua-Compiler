@@ -54,9 +54,10 @@ local inputCode = [[
 ]]
 local tokens = tlc.Tokenizer.tokenize(inputCode)
 local ast = tlc.Parser.parse(tokens)
-local outputBytecode = tlc.Compiler.compile(ast)
+local proto = tlc.InstructionGenerator.generate(ast)
+local bytecode = tlc.Compiler.compile(proto)
 
-local compiledFunction = loadstring(outputBytecode)
+local compiledFunction = loadstring(bytecode)
 
 -- Run the compiled function
 compiledFunction()
