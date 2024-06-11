@@ -1174,6 +1174,7 @@ function InstructionGenerator.generate(ast)
     end
 
     if nodeType == "Number" or nodeType == "String" then
+      -- OP_LOADK [A, Bx]    R(A) := Kst(Bx)
       addInstruction("LOADK", expressionRegister, findOrCreateConstant(node.Value))
     elseif nodeType == "Function" then
       local codeblock  = node.Codeblock
@@ -1198,6 +1199,7 @@ function InstructionGenerator.generate(ast)
           argumentAmount = 0
         end
       end
+      -- OP_CALL [A, B, C]    R(A), ... ,R(A+C-2) := R(A)(R(A+1), ... ,R(A+B-1))
       addInstruction("CALL", expressionRegister, argumentAmount, returnAmount)
       deallocateRegisters(argumentRegisters)
       local returnRegisters = { expressionRegister }
@@ -1212,6 +1214,7 @@ function InstructionGenerator.generate(ast)
       processExpressionNode(nodeIndexExpression, expressionRegister)
       local selfArgumentRegister = allocateRegister()
       local nodeIndexRegister = processExpressionNode(nodeIndexIndex)
+      -- OP_SELF [A, B, C]    R(A+1) := R(B) R(A) := R(B)[RK(C)]
       addInstruction("SELF", expressionRegister, expressionRegister, nodeIndexRegister)
       deallocateRegister(nodeIndexRegister)
       local argumentRegisters = { selfArgumentRegister } -- Allocate the self register
@@ -1224,6 +1227,7 @@ function InstructionGenerator.generate(ast)
       local returnAmount = node.ReturnValueAmount + 1
       local argumentAmount = #node.Arguments + 2
       if returnAmount <= 0 then returnAmount = 0 end
+      -- OP_CALL [A, B, C]    R(A), ... ,R(A+C-2) := R(A)(R(A+1), ... ,R(A+B-1))
       addInstruction("CALL", expressionRegister, argumentAmount, returnAmount)
       deallocateRegisters(argumentRegisters)
       local returnRegisters = { expressionRegister }
@@ -1235,23 +1239,29 @@ function InstructionGenerator.generate(ast)
     elseif nodeType == "Constant" then
       local nodeValue = node.Value
       if nodeValue ~= "nil" then
-        addInstruction("LOADBOOL", expressionRegister, nodeValue == "true" and 1 or 0, 0)
+        local secondValue = (nodeValue == "true" and 1) or 0
+        -- OP_LOADBOOL [A, B, C]    R(A) := (Bool)B if (C) pc++
+        addInstruction("LOADBOOL", expressionRegister, secondValue, 0)
       else
+        -- OP_LOADNIL [A, B]    R(A) := ... := R(B) := nil
         addInstruction("LOADNIL", expressionRegister, expressionRegister)
       end
     elseif nodeType == "TableIndex" then
       processExpressionNode(node.Expression, expressionRegister)
       local indexRegister = processExpressionNode(node.Index)
+      -- OP_GETTABLE [A, B, C]    R(A) := R(B)[RK(C)]
       addInstruction("GETTABLE", expressionRegister, expressionRegister, indexRegister)
       deallocateRegister(indexRegister)
     elseif nodeType == "Table" then
       local elements = node.Elements
+      -- OP_NEWTABLE [A, B, C]    R(A) := {} (size = B,C)
       addInstruction("NEWTABLE", expressionRegister, 0, 0)
       for _, element in ipairs(elements) do
         if not element.IsImplicitKey then
           local valueRegister = processExpressionNode(element.Value)
           local keyRegister = processExpressionNode(element.Key)
           deallocateRegisters({ valueRegister, keyRegister })
+          -- OP_SETTABLE [A, B, C]    R(A)[RK(B)] := RK(C)
           addInstruction("SETTABLE", expressionRegister, keyRegister, valueRegister)
         end
       end
@@ -1269,17 +1279,21 @@ function InstructionGenerator.generate(ast)
         if lastImplicitElementValue.Value.TYPE == "MethodCall" or lastImplicitElementValue.Value.TYPE == "FunctionCall" then
           implicitKeyAmount = 0
         end
+        -- OP_SETLIST [A, B, C]    R(A)[(C-1)*FPF+i] := R(A+i), 1 <= i <= B
         addInstruction("SETLIST", expressionRegister, implicitKeyAmount, 1)
         deallocateRegisters(implicitKeyValues)
       end
     elseif nodeType == "Variable" then
       local variableType = node.VariableType
       if variableType == "Global" then
+        -- OP_GETGLOBAL [A, Bx]    R(A) := Gbl[Kst(Bx)]
         addInstruction("GETGLOBAL", expressionRegister, findOrCreateConstant(node.Value))
       elseif variableType == "Local" then
         local variableRegister = findVariableRegister(node.Value)
+        -- OP_MOVE [A, B]    R(A) := R(B)
         addInstruction("MOVE", expressionRegister, variableRegister)
       elseif variableType == "Upvalue" then
+        -- OP_GETUPVAL [A, B]    R(A) := UpValue[B]
         addInstruction("GETUPVAL", expressionRegister, findOrCreateUpvalue(node.Value))
       end
     elseif nodeType == "BinaryOperator" then
@@ -1295,7 +1309,9 @@ function InstructionGenerator.generate(ast)
       elseif COMPILER_CONTROL_FLOW_OPERATOR_LOOKUP[nodeOperator] then
         local leftExpressionRegister = processExpressionNode(node.Left, expressionRegister)
         local isConditionTrue = (nodeOperator == "and" and 0) or 1
+        -- OP_TEST [A, C]    if not (R(A) <=> C) then pc++
         addInstruction("TEST", leftExpressionRegister, 0, isConditionTrue)
+        -- OP_JMP [A, sBx]    pc+=sBx
         local jumpInstruction, jumpInstructionIndex = addInstruction("JMP", 0, 0) -- Placeholder
         processExpressionNode(node.Right, expressionRegister)
         jumpInstruction[3] = #code - jumpInstructionIndex
@@ -1307,7 +1323,9 @@ function InstructionGenerator.generate(ast)
           leftExpressionRegister, rightExpressionRegister = rightExpressionRegister, leftExpressionRegister
         end
         addInstruction(instruction, flag, leftExpressionRegister, rightExpressionRegister)
+        -- OP_JMP [A, sBx]    pc+=sBx
         addInstruction("JMP", 0, 1)
+        -- OP_LOADBOOL [A, B, C]    R(A) := (Bool)B if (C) pc++
         addInstruction("LOADBOOL", expressionRegister, 0, 1)
         addInstruction("LOADBOOL", expressionRegister, 1, 0)
         deallocateRegisters({ leftExpressionRegister, rightExpressionRegister })
@@ -1317,6 +1335,7 @@ function InstructionGenerator.generate(ast)
         if (rightExpressionRegister - leftExpressionRegister) ~= 1 then
           error("Concatenation requires consecutive registers")
         end
+        -- OP_CONCAT [A, B, C]    R(A) := R(B).. ... ..R(C)
         addInstruction("CONCAT", expressionRegister, leftExpressionRegister, rightExpressionRegister)
         deallocateRegisters({ leftExpressionRegister, rightExpressionRegister })
       else
@@ -1343,6 +1362,7 @@ function InstructionGenerator.generate(ast)
       local functionRegisters = { processExpressionNode(node) }
       deallocateRegisters(functionRegisters)
     elseif nodeType == "BreakStatement" then
+      -- OP_JMP [A, sBx]    pc+=sBx
       local jumpInstruction, jumpInstructionIndex = addInstruction("JMP", 0, 0) -- Placeholder
       table.insert(breakInstructions, jumpInstructionIndex)
     elseif nodeType == "LocalFunctionDeclaration" then
@@ -1366,9 +1386,14 @@ function InstructionGenerator.generate(ast)
         local expressionRegister = processExpressionNode(expression)
         for index, field in ipairs(fields) do
           local fieldRegister = allocateRegister()
+          -- OP_LOADK [A, Bx]    R(A) := Kst(Bx)
           addInstruction("LOADK", fieldRegister, findOrCreateConstant(field))
-          if index == #fields then addInstruction("SETTABLE", expressionRegister, fieldRegister, closureRegister)
-          else                     addInstruction("GETTABLE", expressionRegister, expressionRegister, fieldRegister)
+          if index == #fields then
+            -- OP_SETTABLE [A, B, C]    R(A)[RK(B)] := RK(C)
+            addInstruction("SETTABLE", expressionRegister, fieldRegister, closureRegister)
+          else
+            -- OP_GETTABLE [A, B, C]    R(A) := R(B)[RK(C)]
+            addInstruction("GETTABLE", expressionRegister, expressionRegister, fieldRegister)
           end
           deallocateRegister(fieldRegister)
         end
@@ -1382,11 +1407,13 @@ function InstructionGenerator.generate(ast)
         local upvalueIndex = findOrCreateUpvalue(expression.Value)
         local closureRegister = allocateRegister()
         processFunction(codeblock, closureRegister, parameters, isVarArg)
+        -- OP_SETUPVAL [A, B]    UpValue[B] := R(A)
         addInstruction("SETUPVAL", closureRegister, findOrCreateUpvalue(expression.Value))
         deallocateRegister(closureRegister)
       elseif expression.VariableType == "Global" then
         local globalRegister = allocateRegister()
         processFunction(codeblock, globalRegister, parameters, isVarArg)
+        -- OP_SETGLOBAL [A, Bx]    Gbl[Kst(Bx)] := R(A)
         addInstruction("SETGLOBAL", globalRegister, findOrCreateConstant(expression.Value))
         deallocateRegister(globalRegister)
       end
@@ -1405,8 +1432,9 @@ function InstructionGenerator.generate(ast)
       for index, localName in ipairs(node.Variables) do
         local expressionRegister = variableExpressionRegisters[index]
         if not expressionRegister then
-          -- Load nil into the register
           expressionRegister = allocateRegister()
+          -- Load nil into the register
+          -- OP_LOADNIL [A, B]    R(A) := ... := R(B) := nil
           addInstruction("LOADNIL", expressionRegister, expressionRegister)
         end
         registerVariable(localName, expressionRegister)
@@ -1422,8 +1450,10 @@ function InstructionGenerator.generate(ast)
         stepRegister = processExpressionNode(expressions[3])
       else
         stepRegister = allocateRegister()
+        -- OP_LOADK [A, Bx]    R(A) := Kst(Bx)
         addInstruction("LOADK", stepRegister, findOrCreateConstant(1))
       end
+      -- OP_FORPREP [A, sBx]    R(A)-=R(A+2) pc+=sBx
       local forprepInstruction = addInstruction("FORPREP", startRegister, 0) -- Placeholder
       local loopStart = #code
       registerVariable(variableName, startRegister)
@@ -1431,6 +1461,8 @@ function InstructionGenerator.generate(ast)
       breakInstructions = {}
       processCodeBlock(codeblock)
       local loopEnd = #code
+      -- OP_FORLOOP [,A sBx]   R(A)+=R(A+2)
+      --                       if R(A) <?= R(A+1) then { pc+=sBx R(A+3)=R(A) }
       addInstruction("FORLOOP", startRegister, loopStart - loopEnd - 1)
       forprepInstruction[3] = loopEnd - loopStart
       for _, breakInstructionIndex in ipairs(breakInstructions) do
@@ -1445,6 +1477,7 @@ function InstructionGenerator.generate(ast)
       local codeblock = node.Codeblock
       local iteratorRegisters = {}
       local expressionRegisters = { processExpressionNode(expressions[1]) }
+      -- OP_JMP [A, sBx]    pc+=sBx
       local startJmpInstruction = addInstruction("JMP", 0, 0) -- Placeholder
       local expressionRegister = expressionRegisters[1]
       local forGeneratorRegister = expressionRegisters[1]
@@ -1465,8 +1498,11 @@ function InstructionGenerator.generate(ast)
       local oldBreakInstructions = breakInstructions
       breakInstructions = {}
       processCodeBlock(codeblock)
+      -- OP_TFORLOOP [A, C]    R(A+3), ... ,R(A+2+C) := R(A)(R(A+1), R(A+2))
+      --                       if R(A+3) ~= nil then R(A+2)=R(A+3) else pc++
       local tforloopInstruction = addInstruction("TFORLOOP", expressionRegister, 0, #iteratorVariables)
       startJmpInstruction[3] = #code - loopStart - 1
+      -- OP_JMP [A, sBx]    pc+=sBx
       addInstruction("JMP", 0, loopStart - #code - 1)
       for _, breakInstructionIndex in ipairs(breakInstructions) do
         code[breakInstructionIndex][3] = #code - breakInstructionIndex
@@ -1489,18 +1525,22 @@ function InstructionGenerator.generate(ast)
       if lastExpression and (lastExpression.TYPE == "FunctionCall" or lastExpression.TYPE == "MethodCall") then
         returnAmount = 0
       end
+      -- OP_RETURN [A, B]    return R(A), ... ,R(A+B-2)
       addInstruction("RETURN", startRegister, returnAmount, 0)
       deallocateRegisters(expressionRegisters)
     elseif nodeType == "WhileLoop" then
       local loopStart = #code
       local conditionRegister = processExpressionNode(node.Condition)
+      -- OP_TEST [A, C]    if not (R(A) <=> C) then pc++
       addInstruction("TEST", conditionRegister, 0, 0)
+      -- OP_JMP [A, sBx]    pc+=sBx
       local jumpInstruction = addInstruction("JMP", 0, 0) -- Placeholder
       deallocateRegister(conditionRegister)
       local codeStart = #code
       local oldBreakInstructions = breakInstructions
       breakInstructions = {}
       processCodeBlock(node.Codeblock)
+      -- OP_JMP [A, sBx]    pc+=sBx
       local jumpBackInstruction = addInstruction("JMP", 0, loopStart - #code - 1)
       jumpInstruction[3] = #code - codeStart
       for _, breakInstructionIndex in ipairs(breakInstructions) do
@@ -1511,7 +1551,9 @@ function InstructionGenerator.generate(ast)
       local loopStart = #code
       processCodeBlock(node.Codeblock)
       local conditionRegister = processExpressionNode(node.Condition)
+      -- OP_TEST [A, C]    if not (R(A) <=> C) then pc++
       addInstruction("TEST", conditionRegister, 0, 0)
+      -- OP_JMP [A, sBx]    pc+=sBx
       local jumpInstruction = addInstruction("JMP", 0, loopStart - #code - 1)
       deallocateRegister(conditionRegister)
     elseif nodeType == "DoBlock" then
@@ -1526,11 +1568,14 @@ function InstructionGenerator.generate(ast)
         local condition = conditionCodeblockStatement.Condition
         local codeBlock = conditionCodeblockStatement.Codeblock
         local conditionRegister = processExpressionNode(condition)
+        -- OP_TEST [A, C]    if not (R(A) <=> C) then pc++
         addInstruction("TEST", conditionRegister, 0, 0)
+        -- OP_JMP [A, sBx]    pc+=sBx
         local conditionJumpInstruction, conditionJumpInstructionIndex = addInstruction("JMP", 0, 0) -- Placeholder
         deallocateRegister(conditionRegister)
         processCodeBlock(codeBlock)
         if index < #conditionCodeblockStatements or node.ElseCodeblock then
+          -- OP_JMP [A, sBx]    pc+=sBx
           table.insert(jumpToEndInstructions, { addInstruction("JMP", 0, 0) })
         end
         conditionJumpInstruction[3] = #code - conditionJumpInstructionIndex
@@ -1560,10 +1605,13 @@ function InstructionGenerator.generate(ast)
           if not expressionRegister then error("Expected an expression for assignment") end
           if variableType == "Local" then
             local variableRegister = findVariableRegister(variableName)
+            -- OP_MOVE [A, B]    R(A) := R(B)
             addInstruction("MOVE", variableRegister, expressionRegister)
           elseif variableType == "Global" then
+            -- OP_SETGLOBAL [A, Bx]    Gbl[Kst(Bx)] := R(A)
             addInstruction("SETGLOBAL", expressionRegister, findOrCreateConstant(variableName))
           elseif variableType == "Upvalue" then
+            -- OP_SETUPVAL [A, B]    UpValue[B] := R(A)
             addInstruction("SETUPVAL", expressionRegister, findOrCreateUpvalue(variableName))
           end
         elseif lvalueType == "TableIndex" then
@@ -1571,6 +1619,7 @@ function InstructionGenerator.generate(ast)
           local tableExpressionRegister = processExpressionNode(lvalue.Expression)
           local expressionRegister = expressionRegisters[index]
           if not expressionRegister then error("Expected an expression for assignment") end
+          -- OP_SETTABLE [A, B, C]    R(A)[RK(B)] := RK(C)
           addInstruction("SETTABLE", tableExpressionRegister, indexRegister, expressionRegister)
           deallocateRegisters({ indexRegister, expressionRegister, tableExpressionRegister })
         else
@@ -1601,16 +1650,20 @@ function InstructionGenerator.generate(ast)
 
     processCodeBlock(codeBlock, true, parameters)
 
+    -- OP_RETURN [A, B]    return R(A), ... ,R(A+B-2)
     addInstruction("RETURN", 0, 1) -- Default return statement
     setProto(oldProto)
     table.insert(protos, proto)
+    -- R(A) := closure(KPROTO[Bx], R(A), ... ,R(A+n))
     addInstruction("CLOSURE", expressionRegister, #protos - 1)
 
     for index, upvalueName in ipairs(proto.upvalues) do
       local upvalueType = getVariableType(upvalueName)
       if upvalueType == "Local" then
+        -- OP_MOVE [A, B]    R(A) := R(B)
         addInstruction("MOVE", 0, findVariableRegister(upvalueName))
       elseif upvalueType == "Upvalue" then
+        -- OP_GETUPVAL [A, B]    R(A) := UpValue[B]
         addInstruction("GETUPVAL", 0, findOrCreateUpvalue(upvalueName))
       else error("Unsupported upvalue type: " .. upvalueType) end
     end
@@ -1621,6 +1674,7 @@ function InstructionGenerator.generate(ast)
   local function generate()
     local proto = newProto()
     processCodeBlock(ast)
+    -- OP_RETURN [A, B]    return R(A), ... ,R(A+B-2)
     addInstruction("RETURN", 0, 1) -- Default return statement
     return proto
   end
