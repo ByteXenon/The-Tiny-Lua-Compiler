@@ -998,23 +998,6 @@ end
 --// Compiler //--
 local unpack = (unpack or table.unpack)
 
-local MODE_iABC = 0
-local MODE_iABx = 1
-local MODE_iAsBx = 2
-
-local COMPILER_OPCODE_LOOKUP = {
-  ["MOVE"]     = {0, MODE_iABC},  ["LOADK"]     = {1, MODE_iABx},  ["LOADBOOL"] = {2, MODE_iABC},  ["LOADNIL"]   = {3, MODE_iABC},
-  ["GETUPVAL"] = {4, MODE_iABC},  ["GETGLOBAL"] = {5, MODE_iABx},  ["GETTABLE"] = {6, MODE_iABC},  ["SETGLOBAL"] = {7, MODE_iABx},
-  ["SETUPVAL"] = {8, MODE_iABC},  ["SETTABLE"]  = {9, MODE_iABC},  ["NEWTABLE"] = {10, MODE_iABC}, ["SELF"]      = {11, MODE_iABC},
-  ["ADD"]      = {12, MODE_iABC}, ["SUB"]       = {13, MODE_iABC}, ["MUL"]      = {14, MODE_iABC}, ["DIV"]       = {15, MODE_iABC},
-  ["MOD"]      = {16, MODE_iABC}, ["POW"]       = {17, MODE_iABC}, ["UNM"]      = {18, MODE_iABC}, ["NOT"]       = {19, MODE_iABC},
-  ["LEN"]      = {20, MODE_iABC}, ["CONCAT"]    = {21, MODE_iABC}, ["JMP"]      = {22, MODE_iAsBx},["EQ"]        = {23, MODE_iABC},
-  ["LT"]       = {24, MODE_iABC}, ["LE"]        = {25, MODE_iABC}, ["TEST"]     = {26, MODE_iABC}, ["TESTSET"]   = {27, MODE_iABC},
-  ["CALL"]     = {28, MODE_iABC}, ["TAILCALL"]  = {29, MODE_iABC}, ["RETURN"]   = {30, MODE_iABC}, ["FORLOOP"]   = {31, MODE_iAsBx},
-  ["FORPREP"]  = {32, MODE_iAsBx},["TFORLOOP"]  = {33, MODE_iABC}, ["SETLIST"]  = {34, MODE_iABC}, ["CLOSE"]     = {35, MODE_iABC},
-  ["CLOSURE"]  = {36, MODE_iABx}, ["VARARG"]    = {37, MODE_iABC}
-}
-
 local COMPILER_SIMPLE_ARICHMETIC_OPERATOR_LOOKUP = {
   ["+"] = "ADD", ["-"] = "SUB",
   ["*"] = "MUL", ["/"] = "DIV",
@@ -1029,9 +1012,9 @@ local COMPILER_COMPARISON_INSTRUCTION_LOOKUP = {
 local COMPILER_COMPARISON_OPERATOR_LOOKUP = createLookupTable({"==", "~=", "<", ">", "<=", ">="})
 local COMPILER_CONTROL_FLOW_OPERATOR_LOOKUP = createLookupTable({"and", "or"})
 
---* Compiler *--
-local Compiler = {}
-function Compiler.compile(ast)
+--* InstructionGenerator *--
+local InstructionGenerator = {}
+function InstructionGenerator.generate(ast)
   local breakInstructions
   local locals, currentScope
   local scopes = {}
@@ -1634,6 +1617,37 @@ function Compiler.compile(ast)
     return proto
   end
 
+  --// MAIN //--
+  local function generate()
+    local proto = newProto()
+    processCodeBlock(ast)
+    addInstruction("RETURN", 0, 1) -- Default return statement
+    return proto
+  end
+
+  return generate()
+end
+
+local MODE_iABC = 0
+local MODE_iABx = 1
+local MODE_iAsBx = 2
+
+local COMPILER_OPCODE_LOOKUP = {
+  ["MOVE"]     = {0, MODE_iABC},  ["LOADK"]     = {1, MODE_iABx},  ["LOADBOOL"] = {2, MODE_iABC},  ["LOADNIL"]   = {3, MODE_iABC},
+  ["GETUPVAL"] = {4, MODE_iABC},  ["GETGLOBAL"] = {5, MODE_iABx},  ["GETTABLE"] = {6, MODE_iABC},  ["SETGLOBAL"] = {7, MODE_iABx},
+  ["SETUPVAL"] = {8, MODE_iABC},  ["SETTABLE"]  = {9, MODE_iABC},  ["NEWTABLE"] = {10, MODE_iABC}, ["SELF"]      = {11, MODE_iABC},
+  ["ADD"]      = {12, MODE_iABC}, ["SUB"]       = {13, MODE_iABC}, ["MUL"]      = {14, MODE_iABC}, ["DIV"]       = {15, MODE_iABC},
+  ["MOD"]      = {16, MODE_iABC}, ["POW"]       = {17, MODE_iABC}, ["UNM"]      = {18, MODE_iABC}, ["NOT"]       = {19, MODE_iABC},
+  ["LEN"]      = {20, MODE_iABC}, ["CONCAT"]    = {21, MODE_iABC}, ["JMP"]      = {22, MODE_iAsBx},["EQ"]        = {23, MODE_iABC},
+  ["LT"]       = {24, MODE_iABC}, ["LE"]        = {25, MODE_iABC}, ["TEST"]     = {26, MODE_iABC}, ["TESTSET"]   = {27, MODE_iABC},
+  ["CALL"]     = {28, MODE_iABC}, ["TAILCALL"]  = {29, MODE_iABC}, ["RETURN"]   = {30, MODE_iABC}, ["FORLOOP"]   = {31, MODE_iAsBx},
+  ["FORPREP"]  = {32, MODE_iAsBx},["TFORLOOP"]  = {33, MODE_iABC}, ["SETLIST"]  = {34, MODE_iABC}, ["CLOSE"]     = {35, MODE_iABC},
+  ["CLOSURE"]  = {36, MODE_iABx}, ["VARARG"]    = {37, MODE_iABC}
+}
+
+--* Compiler *--
+local Compiler = {}
+function Compiler.compile(proto)
   --// BYTE MANIPULATION (needed for compiling to bytecode) //--
   local function twosComplement(value)
     local value = value or 0
@@ -1731,36 +1745,35 @@ function Compiler.compile(ast)
     end
     return makeFourBytes(instructionNumber)
   end
-  function makeConstantSection()
-    local constantSection = makeFourBytes(#constants) -- Number of constants
-    for _, constant in ipairs(constants) do
+  function makeConstantSection(proto)
+    local constantSection = makeFourBytes(#proto.constants) -- Number of constants
+    for _, constant in ipairs(proto.constants) do
       local constantType = type(constant)
       constantSection = constantSection .. makeConstant(constant, constantType)
     end
-    constantSection = constantSection .. makeFourBytes(#protos) -- Number of protos
-    for _, proto in ipairs(protos) do
+    constantSection = constantSection .. makeFourBytes(#proto.protos) -- Number of protos
+    for _, proto in ipairs(proto.protos) do
       constantSection = constantSection .. makeFunction(proto)
     end
     return constantSection
   end
-  function makeCodeSection()
-    local codeSection = makeFourBytes(#code) -- Number of instructions
-    for _, instruction in ipairs(code) do
+  function makeCodeSection(proto)
+    local codeSection = makeFourBytes(#proto.code) -- Number of instructions
+    for _, instruction in ipairs(proto.code) do
       codeSection = codeSection .. makeInstruction(instruction)
     end
     return codeSection
   end
   function makeFunction(proto)
-    setProto(proto)
-    local functionHeader = makeString(functionName) -- Function name
+    local functionHeader = makeString(proto.functionName) -- Function name
     functionHeader = functionHeader .. makeFourBytes(0) -- Line defined
     functionHeader = functionHeader .. makeFourBytes(0) -- Last line defined
-    functionHeader = functionHeader .. makeOneByte(#upvalues) -- nups (Number of upvalues)
-    functionHeader = functionHeader .. makeOneByte(numParams) -- Number of parameters
-    functionHeader = functionHeader .. makeOneByte((isVarArg and 2) or 0) -- Is vararg
+    functionHeader = functionHeader .. makeOneByte(#proto.upvalues) -- nups (Number of upvalues)
+    functionHeader = functionHeader .. makeOneByte(proto.numParams) -- Number of parameters
+    functionHeader = functionHeader .. makeOneByte((proto.isVarArg and 2) or 0) -- Is vararg
     functionHeader = functionHeader .. makeOneByte(128) -- Max stack size
-    functionHeader = functionHeader .. makeCodeSection()
-    functionHeader = functionHeader .. makeConstantSection()
+    functionHeader = functionHeader .. makeCodeSection(proto)
+    functionHeader = functionHeader .. makeConstantSection(proto)
     functionHeader = functionHeader .. makeFourBytes(0) -- Line info
     functionHeader = functionHeader .. makeFourBytes(0) -- Local variables
     functionHeader = functionHeader .. makeFourBytes(0) -- Upvalues
@@ -1780,16 +1793,10 @@ function Compiler.compile(ast)
   end
 
   --// MAIN //--
-  local function makeBytecode()
-    local header = makeHeader()
-    local functionHeader = makeFunction(currentProto)
-    return header .. functionHeader
-  end
   local function compile()
-    local proto = newProto()
-    processCodeBlock(ast)
-    addInstruction("RETURN", 0, 1) -- Default return statement
-    return makeBytecode()
+    local header = makeHeader()
+    local functionHeader = makeFunction(proto)
+    return header .. functionHeader
   end
 
   return compile()
@@ -1798,5 +1805,6 @@ end
 return {
   Tokenizer = Tokenizer,
   Parser = Parser,
+  InstructionGenerator = InstructionGenerator,
   Compiler = Compiler
 }
