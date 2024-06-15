@@ -79,13 +79,7 @@ local function createLookupTable(list)
 end
 local function makeTrie(table)
   local trieTable = {}
-  local longestElement = 0
-
   for _, op in ipairs(table) do
-    if #op > longestElement then
-      longestElement = #op
-    end
-
     local node = trieTable
     for index = 1, #op do
       local character = op:sub(index, index)
@@ -94,7 +88,7 @@ local function makeTrie(table)
     end
     node.Value = op
   end
-  return trieTable, longestElement
+  return trieTable
 end
 
 --/// Tokenizer ///--
@@ -127,7 +121,7 @@ local TOKENIZER_RESERVED_KEYWORDS_LOOKUP = createLookupTable({
 "in",       "if",     "else",  "elseif",
 "function", "then",   "break", "continue" })
 local TOKENIZER_LUA_OPERATORS_LOOKUP                      = createLookupTable(TOKENIZER_LUA_OPERATORS)
-local TOKENIZER_OPERATOR_TRIE, TOKENIZER_OPERATOR_LONGEST = makeTrie(TOKENIZER_LUA_OPERATORS)
+local TOKENIZER_OPERATOR_TRIE = makeTrie(TOKENIZER_LUA_OPERATORS)
 
 --* Tokenizer *--
 local Tokenizer = {}
@@ -279,16 +273,22 @@ function Tokenizer.tokenize(code)
     return table.concat(newString)
   end
   local function consumeOperator()
-    local node = TOKENIZER_OPERATOR_TRIE
+    local node  = TOKENIZER_OPERATOR_TRIE
     local operator
 
-    for index = 0, TOKENIZER_OPERATOR_LONGEST - 1 do
+    -- Trie walker
+    local index = 0
+    while true do
       local character = lookAhead(index)
-      node = node[character]
+      node = node[character] -- Advance to the deeper node
       if not node then break end
-      if node.Value then operator = node.Value end
+      operator = node.Value
+      index    = index + 1
     end
-    if operator then consume(#operator - 1) end
+    if operator then
+      consume(#operator - 1)
+    end
+
     return operator
   end
   local function consumeShortComment()
