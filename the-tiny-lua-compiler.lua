@@ -120,8 +120,8 @@ local TOKENIZER_RESERVED_KEYWORDS_LOOKUP = createLookupTable({
 "local",    "repeat", "until", "return",
 "in",       "if",     "else",  "elseif",
 "function", "then",   "break", "continue" })
-local TOKENIZER_LUA_OPERATORS_LOOKUP                      = createLookupTable(TOKENIZER_LUA_OPERATORS)
-local TOKENIZER_OPERATOR_TRIE = makeTrie(TOKENIZER_LUA_OPERATORS)
+local TOKENIZER_LUA_OPERATORS_LOOKUP = createLookupTable(TOKENIZER_LUA_OPERATORS)
+local TOKENIZER_OPERATOR_TRIE        = makeTrie(TOKENIZER_LUA_OPERATORS)
 
 --* Tokenizer *--
 local Tokenizer = {}
