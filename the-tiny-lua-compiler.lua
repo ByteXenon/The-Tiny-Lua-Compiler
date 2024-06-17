@@ -216,6 +216,7 @@ function Tokenizer.tokenize(code)
     local number = { curChar }
 
     -- Hexadecimal number case
+    -- 0[xX][0-9a-fA-F]+
     if isHexadecimalNumberPrefix() then
       table.insert(number, consume()) -- Consume the "0"
       table.insert(number, consume()) -- Consume the "x"
@@ -230,6 +231,7 @@ function Tokenizer.tokenize(code)
     end
 
     -- Floating point number case
+    -- [0-9]*\.[0-9]+
     if lookAhead() == "." then
       table.insert(number, consume()) -- Consume the "."
       while isNumber(lookAhead()) do
@@ -238,6 +240,7 @@ function Tokenizer.tokenize(code)
     end
 
     -- Exponential (scientific) notation case
+    -- [eE][+-]?[0-9]+
     if isScientificNotationPrefix(lookAhead()) then
       table.insert(number, consume()) -- Consume the "e" or "E"
       if lookAhead() == "+" or lookAhead() == "-" then -- Consume optional sign
@@ -253,7 +256,7 @@ function Tokenizer.tokenize(code)
   local function consumeString()
     local delimiter = curChar
     local newString = { }
-    consume()
+    consume() -- Consume the delimiter
     while curChar ~= delimiter do
       if curChar == "\\" then
         local nextChar = consume()
@@ -423,7 +426,7 @@ function Parser.parse(tokens)
   local function enterScope(isFunctionScope)
     local scope = {
       localVariables = {},
-      isFunctionScope = (isFunctionScope or false)
+      isFunctionScope = isFunctionScope
     }
     table.insert(scopeStack, scope)
     currentScope = scope
@@ -448,7 +451,8 @@ function Parser.parse(tokens)
     for scopeIndex = #scopeStack, 1, -1 do
       local scope = scopeStack[scopeIndex]
       if scope.localVariables[variableName] then
-        return (isUpvalue and "Upvalue") or "Local", scopeIndex
+        local variableType = (isUpvalue and "Upvalue") or "Local"
+        return variableType, scopeIndex
       elseif scope.isFunctionScope then
         isUpvalue = true
       end
