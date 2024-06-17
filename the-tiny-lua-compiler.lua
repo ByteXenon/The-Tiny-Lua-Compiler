@@ -1143,6 +1143,10 @@ function InstructionGenerator.generate(ast)
   end
 
   --// UTILITY FUNCTIONS //--
+  local function isMultiretNode(node)
+    local nodeType = node.TYPE
+    return nodeType == "FunctionCall" or nodeType == "MethodCall" or nodeType == "Vararg"
+  end
   local function findOrCreateConstant(value)
     if constantLookup[value] then
       return constantLookup[value]
@@ -1199,7 +1203,7 @@ function InstructionGenerator.generate(ast)
       if returnAmount <= 0 then returnAmount = 0 end
       if node.Arguments[#node.Arguments] then
         local lastArgument = node.Arguments[#node.Arguments]
-        if lastArgument.TYPE == "FunctionCall" or lastArgument.TYPE == "VarArg" then
+        if isMultiretNode(lastArgument) then
           argumentAmount = 0
         end
       end
@@ -1280,7 +1284,7 @@ function InstructionGenerator.generate(ast)
       end
       if #implicitKeyValues > 0 then
         local implicitKeyAmount = #implicitKeyValues
-        if lastImplicitElementValue.Value.TYPE == "MethodCall" or lastImplicitElementValue.Value.TYPE == "FunctionCall" then
+        if isMultiretNode(lastImplicitElementValue) then
           implicitKeyAmount = 0
         end
         -- OP_SETLIST [A, B, C]    R(A)[(C-1)*FPF+i] := R(A+i), 1 <= i <= B
@@ -1526,7 +1530,7 @@ function InstructionGenerator.generate(ast)
       local startRegister = expressionRegisters[1] or 0
       local returnAmount = #node.Expressions + 1
       local lastExpression = node.Expressions[#node.Expressions]
-      if lastExpression and (lastExpression.TYPE == "FunctionCall" or lastExpression.TYPE == "MethodCall") then
+      if lastExpression and isMultiretNode(lastExpression) then
         returnAmount = 0
       end
       -- OP_RETURN [A, B]    return R(A), ... ,R(A+B-2)
