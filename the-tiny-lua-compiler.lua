@@ -504,23 +504,26 @@ function Parser.parse(tokens)
   end
 
   --// AUXILIARY FUNCTIONS //--
-  local getNextNode, parseCodeBlock
-  local consumeExpression, consumeExpressions
+  local function createNilNode()
+    return { TYPE = "Constant", Value = "nil" }
+  end
   local function adjustMultiretNodes(nodeList, expectedReturnAmount)
     local lastNode = nodeList[#nodeList]
-    local extra = expectedReturnAmount - #nodeList
+    local extraReturns = expectedReturnAmount - #nodeList
     if lastNode and isMultiretNode(lastNode) then
-      extra = extra + 1
-      if extra < 0 then extra = -1 end
-      lastNode.ReturnValueAmount = extra
+      extraReturns = math.max(extraReturns + 1, -1)
+      -- Adjust the return value amount
+      lastNode.ReturnValueAmount = extraReturns
     else
-      for _ = 1, extra do
-        table.insert(nodeList, { TYPE = "Constant", Value = "nil" })
+      for _ = 1, extraReturns do
+        table.insert(nodeList, createNilNode())
       end
     end
   end
 
   --// PARSERS //--
+  local getNextNode, parseCodeBlock
+  local consumeExpression, consumeExpressions
   local function consumeIdentifierList()
     local identifiers = {}
     while currentToken.TYPE == "Identifier" do
