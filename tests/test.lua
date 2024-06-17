@@ -34,12 +34,16 @@ local simpleTestScript = [[
   local a = 10 + 1;
   print(a)
   while true do
-    print('test string', ...)
+    print('test string')
   end
   if 1     then print(1)
   elseif 2 then print(2)
   else          print(3)
   end
+  local function b()
+    return a, 2, 3
+  end
+  b()
 ]]
 local simpleTestTokens = {
   { TYPE = "Keyword",    Value = "local" },
@@ -59,8 +63,6 @@ local simpleTestTokens = {
   { TYPE = "Identifier", Value = "print" },
   { TYPE = "Character",  Value = "(" },
   { TYPE = "String",     Value = "test string" },
-  { TYPE = "Character",  Value = "," },
-  { TYPE = "VarArg" },
   { TYPE = "Character",  Value = ")" },
   { TYPE = "Keyword",    Value = "end" },
   { TYPE = "Keyword",    Value = "if" },
@@ -82,7 +84,22 @@ local simpleTestTokens = {
   { TYPE = "Character",  Value = "(" },
   { TYPE = "Number",     Value = 3 },
   { TYPE = "Character",  Value = ")" },
-  { TYPE = "Keyword",    Value = "end" }
+  { TYPE = "Keyword",    Value = "end" },
+  { TYPE = "Keyword",    Value = "local" },
+  { TYPE = "Keyword",    Value = "function" },
+  { TYPE = "Identifier", Value = "b" },
+  { TYPE = "Character",  Value = "(" },
+  { TYPE = "Character",  Value = ")" },
+  { TYPE = "Keyword",    Value = "return" },
+  { TYPE = "Identifier", Value = "a" },
+  { TYPE = "Character",  Value = "," },
+  { TYPE = "Number",     Value = 2 },
+  { TYPE = "Character",  Value = "," },
+  { TYPE = "Number",     Value = 3 },
+  { TYPE = "Keyword",    Value = "end" },
+  { TYPE = "Identifier", Value = "b" },
+  { TYPE = "Character",  Value = "(" },
+  { TYPE = "Character",  Value = ")" }
 }
 
 local simpleTestTokensResult = tlc.Tokenizer.tokenize(simpleTestScript)
@@ -122,7 +139,6 @@ local expectedAST = {
         Expression = { TYPE = "Variable", VariableType = "Global", Value = "print" },
         Arguments = {
           { TYPE = "String", Value = "test string" },
-          { TYPE = "VarArg" }
         },
         ReturnValueAmount = 0,
       }
@@ -169,6 +185,29 @@ local expectedAST = {
         ReturnValueAmount = 0
       }
     }
+  },
+  {
+    TYPE = "LocalFunctionDeclaration",
+    Name = "b",
+    IsVarArg = false,
+    Parameters = {},
+    Codeblock = {
+      TYPE = "Group",
+      {
+        TYPE = "ReturnStatement",
+        Expressions = {
+          { TYPE = "Variable", VariableType = "Upvalue", Value = "a" },
+          { TYPE = "Number", Value = 2 },
+          { TYPE = "Number", Value = 3 }
+        }
+      }
+    }
+  },
+  {
+    TYPE = "FunctionCall",
+    Expression = { TYPE = "Variable", VariableType = "Local", Value = "b" },
+    Arguments = {},
+    ReturnValueAmount = 0
   }
 }
 local result = tlc.Parser.parse(simpleTestTokensResult)
