@@ -1465,11 +1465,10 @@ function InstructionGenerator.generate(ast)
       local codeblock = node.Codeblock
       local startRegister = processExpressionNode(expressions[1])
       local endRegister = processExpressionNode(expressions[2])
-      local stepRegister
+      local stepRegister = allocateRegister()
       if expressions[3] then
-        stepRegister = processExpressionNode(expressions[3])
+        stepRegister = processExpressionNode(expressions[3], stepRegister)
       else
-        stepRegister = allocateRegister()
         -- OP_LOADK [A, Bx]    R(A) := Kst(Bx)
         addInstruction("LOADK", stepRegister, findOrCreateConstant(1))
       end
