@@ -318,9 +318,8 @@ function Tokenizer.tokenize(code)
         if closingDepth == depth then break end
       elseif curChar == "\0" then
         error("Unclosed long comment")
-      else
-        consume()
       end
+      consume()
     end
   end
   local function consumeComment()
@@ -488,19 +487,28 @@ function Parser.parse(tokens)
   end
 
   --// EXPECTORS //--
-  local function expectTokenType(tokenType, dontConsume)
-    assert(currentToken and currentToken.TYPE == tokenType, "Expected a " .. tokenType .. ", got: " .. (currentToken or {}).TYPE)
-    if not dontConsume then consume() end
+  local function expectToken(expectedType, expectedValue, skipConsume)
+    local actualType = currentToken and currentToken.TYPE or "nil"
+    assert(currentToken and currentToken.TYPE == expectedType, "Expected a " .. expectedType .. ", got: " .. actualType)
+    assert(currentToken.Value == expectedValue, "Expected '" .. expectedValue .. "'")
+    if not skipConsume then consume() end
   end
-  local function expectCharacter(character, dontConsume)
-    assert(currentToken and currentToken.TYPE == "Character", "Expected a character, got: " .. (currentToken or {}).TYPE)
+  local function expectTokenType(expectedType, skipConsume)
+    local actualType = currentToken and currentToken.TYPE or "nil"
+    assert(actualType == expectedType, string.format("Expected a %s, got: %s", expectedType, actualType))
+    if not skipConsume then consume() end
+  end
+  local function expectCharacter(character, skipConsume)
+    local actualType = currentToken and currentToken.TYPE or "nil"
+    assert(currentToken and currentToken.TYPE == "Character", "Expected a character, got: " .. actualType)
     assert(currentToken.Value == character, "Expected '" .. character .. "'")
-    if not dontConsume then consume() end
+    if not skipConsume then consume() end
   end
-  local function expectKeyword(keyword, dontConsume)
-    assert(currentToken and currentToken.TYPE == "Keyword", "Expected a keyword, got: " .. (currentToken or {}).TYPE)
+  local function expectKeyword(keyword, skipConsume)
+    local actualType = currentToken and currentToken.TYPE or "nil"
+    assert(currentToken and currentToken.TYPE == "Keyword", "Expected a keyword, got: " .. actualType)
     assert(currentToken.Value == keyword, "Expected '" .. keyword .. "'")
-    if not dontConsume then consume() end
+    if not skipConsume then consume() end
   end
 
   --// AUXILIARY FUNCTIONS //--
@@ -792,10 +800,9 @@ function Parser.parse(tokens)
       adjustMultiretNodes(expressions, #variables)
       declareLocalVariables(variables)
       return { TYPE = "LocalDeclaration", Variables = variables, Expressions = expressions }
-    else
-      declareLocalVariables(variables)
-      return { TYPE = "LocalDeclaration", Variables = variables, Expressions = {} }
     end
+    declareLocalVariables(variables)
+    return { TYPE = "LocalDeclaration", Variables = variables, Expressions = {} }
   end
   local function parseWhile()
     consume() -- Consume the "while" token
@@ -944,9 +951,8 @@ function Parser.parse(tokens)
       elseif lvalueType == "FunctionCall" or lvalueType == "MethodCall" then
         lvalue.ReturnValueAmount = 0
         return lvalue
-      else
-        error("Unexpected lvalue type: " .. lvalueType)
       end
+      error("Unexpected lvalue type: " .. lvalueType)
     end
     error("Expected an lvalue, got: " .. lvalueType)
   end
@@ -1349,15 +1355,10 @@ function InstructionGenerator.generate(ast)
         -- OP_CONCAT [A, B, C]    R(A) := R(B).. ... ..R(C)
         addInstruction("CONCAT", expressionRegister, leftExpressionRegister, rightExpressionRegister)
         deallocateRegisters({ leftExpressionRegister, rightExpressionRegister })
-      else
-        error("Unsupported binary operator: " .. tostring(nodeOperator))
       end
     elseif nodeType == "UnaryOperator" then
       local nodeOperator = node.Operator
       local operatorOpcode = COMPILER_UNARY_OPERATOR_LOOKUP[nodeOperator]
-      if not operatorOpcode then
-        error("Unsupported unary operator: " .. tostring(nodeOperator))
-      end
       local operandExpression = processExpressionNode(node.Operand)
       addInstruction(operatorOpcode, expressionRegister, operandExpression)
       deallocateRegister(operandExpression)
@@ -1497,9 +1498,6 @@ function InstructionGenerator.generate(ast)
       if not (forGeneratorRegister and forStateRegister and forControlRegister) then
         error("Expected 3 expression registers")
       end
-      registerVariable("(for generator)", forGeneratorRegister)
-      registerVariable("(for state)", forStateRegister)
-      registerVariable("(for control)", forControlRegister)
       local loopStart = #code
       for index, iteratorVariable in ipairs(iteratorVariables) do
         local iteratorRegister = allocateRegister()
@@ -1519,11 +1517,8 @@ function InstructionGenerator.generate(ast)
         code[breakInstructionIndex][3] = #code - breakInstructionIndex
       end
       breakInstructions = oldBreakInstructions
-      deallocateRegisters(iteratorRegisters)
       deallocateRegisters({ expressionRegister, forGeneratorRegister, forStateRegister, forControlRegister })
-      unregisterVariables({ "(for generator)", "(for state)", "(for control)" })
       unregisterVariables(iteratorVariables)
-      deallocateRegisters(iteratorRegisters)
     elseif nodeType == "ReturnStatement" then
       local expressionRegisters = {}
       for index, expression in ipairs(node.Expressions) do
@@ -1786,9 +1781,8 @@ function Compiler.compile(proto)
       return makeOneByte(1) .. makeOneByte(secondByte)
     elseif constantType == "nil" then
       return makeOneByte(0)
-    else
-      error("Unsupported constant type: " .. constantType)
     end
+    error("Unsupported constant type: " .. constantType)
   end
   function makeInstruction(instruction)
     local opcodeTable = COMPILER_OPCODE_LOOKUP[instruction[1]]
