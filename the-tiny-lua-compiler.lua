@@ -1526,6 +1526,9 @@ function InstructionGenerator.generate(ast)
       local expressionRegisters = {}
       for index, expression in ipairs(node.Expressions) do
         local currentExpressionRegisters = { processExpressionNode(expression) }
+        for _, register in ipairs(currentExpressionRegisters) do
+          table.insert(expressionRegisters, register)
+        end
       end
       local startRegister = expressionRegisters[1] or 0
       local returnAmount = #node.Expressions + 1
