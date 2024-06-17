@@ -483,7 +483,7 @@ function Parser.parse(tokens)
   end
   local function isMultiretNode(node)
     local nodeType = node.TYPE
-    return nodeType == "FunctionCall" or nodeType == "MethodCall" or nodeType == "Vararg"
+    return nodeType == "FunctionCall" or nodeType == "MethodCall" or nodeType == "VarArg"
   end
 
   --// EXPECTORS //--
@@ -1155,7 +1155,7 @@ function InstructionGenerator.generate(ast)
   local function isMultiretNode(node)
     if not node then return false end
     local nodeType = node.TYPE
-    return nodeType == "FunctionCall" or nodeType == "MethodCall" or nodeType == "Vararg"
+    return nodeType == "FunctionCall" or nodeType == "MethodCall" or nodeType == "VarArg"
   end
   local function updateBreakInstructions(list)
     local currentInstructionIndex = #code
