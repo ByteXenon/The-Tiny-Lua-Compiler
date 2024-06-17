@@ -1301,7 +1301,7 @@ function InstructionGenerator.generate(ast)
       end
       if #implicitKeyValues > 0 then
         local implicitKeyAmount = #implicitKeyValues
-        if isMultiretNode(lastImplicitElementValue) then
+        if isMultiretNode(lastImplicitElementValue.Value) then
           implicitKeyAmount = 0
         end
         -- OP_SETLIST [A, B, C]    R(A)[(C-1)*FPF+i] := R(A+i), 1 <= i <= B
