@@ -1156,6 +1156,14 @@ function InstructionGenerator.generate(ast)
     local nodeType = node.TYPE
     return nodeType == "FunctionCall" or nodeType == "MethodCall" or nodeType == "Vararg"
   end
+  local function updateBreakInstructions(list)
+    local currentInstructionIndex = #code
+    for _, breakInstructionIndex in ipairs(list) do
+      local instruction  = code[breakInstructionIndex]
+      local jumpDistance = currentInstructionIndex - breakInstructionIndex
+      instruction[3] = jumpDistance
+    end
+  end
   local function findOrCreateConstant(value)
     if constantLookup[value] then
       return constantLookup[value]
@@ -1477,9 +1485,7 @@ function InstructionGenerator.generate(ast)
       --                       if R(A) <?= R(A+1) then { pc+=sBx R(A+3)=R(A) }
       addInstruction("FORLOOP", startRegister, loopStart - loopEnd - 1)
       forprepInstruction[3] = loopEnd - loopStart
-      for _, breakInstructionIndex in ipairs(breakInstructions) do
-        code[breakInstructionIndex][3] = #code - breakInstructionIndex
-      end
+      updateBreakInstructions(breakInstructions)
       breakInstructions = oldBreakInstructions
       unregisterVariable(variableName)
       deallocateRegisters({ startRegister, endRegister, stepRegister })
@@ -1513,9 +1519,7 @@ function InstructionGenerator.generate(ast)
       startJmpInstruction[3] = #code - loopStart - 1
       -- OP_JMP [A, sBx]    pc+=sBx
       addInstruction("JMP", 0, loopStart - #code - 1)
-      for _, breakInstructionIndex in ipairs(breakInstructions) do
-        code[breakInstructionIndex][3] = #code - breakInstructionIndex
-      end
+      updateBreakInstructions(breakInstructions)
       breakInstructions = oldBreakInstructions
       deallocateRegisters({ expressionRegister, forGeneratorRegister, forStateRegister, forControlRegister })
       unregisterVariables(iteratorVariables)
@@ -1549,9 +1553,7 @@ function InstructionGenerator.generate(ast)
       -- OP_JMP [A, sBx]    pc+=sBx
       local jumpBackInstruction = addInstruction("JMP", 0, loopStart - #code - 1)
       jumpInstruction[3] = #code - codeStart
-      for _, breakInstructionIndex in ipairs(breakInstructions) do
-        code[breakInstructionIndex][3] = #code - breakInstructionIndex
-      end
+      updateBreakInstructions(breakInstructions)
       breakInstructions = oldBreakInstructions
     elseif nodeType == "RepeatLoop" then
       local loopStart = #code
