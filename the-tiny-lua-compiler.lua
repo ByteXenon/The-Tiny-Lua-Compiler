@@ -1153,6 +1153,7 @@ function InstructionGenerator.generate(ast)
 
   --// UTILITY FUNCTIONS //--
   local function isMultiretNode(node)
+    if not node then return false end
     local nodeType = node.TYPE
     return nodeType == "FunctionCall" or nodeType == "MethodCall" or nodeType == "Vararg"
   end
@@ -1496,7 +1497,6 @@ function InstructionGenerator.generate(ast)
       local expressionRegisters = { processExpressionNode(expressions[1]) }
       -- OP_JMP [A, sBx]    pc+=sBx
       local startJmpInstruction = addInstruction("JMP", 0, 0) -- Placeholder
-      local expressionRegister = expressionRegisters[1]
       local forGeneratorRegister = expressionRegisters[1]
       local forStateRegister = expressionRegisters[2]
       local forControlRegister = expressionRegisters[3]
@@ -1514,24 +1514,23 @@ function InstructionGenerator.generate(ast)
       processCodeBlock(codeblock)
       -- OP_TFORLOOP [A, C]    R(A+3), ... ,R(A+2+C) := R(A)(R(A+1), R(A+2))
       --                       if R(A+3) ~= nil then R(A+2)=R(A+3) else pc++
-      local tforloopInstruction = addInstruction("TFORLOOP", expressionRegister, 0, #iteratorVariables)
+      local tforloopInstruction = addInstruction("TFORLOOP", forGeneratorRegister, 0, #iteratorVariables)
       startJmpInstruction[3] = #code - loopStart - 1
       -- OP_JMP [A, sBx]    pc+=sBx
       addInstruction("JMP", 0, loopStart - #code - 1)
       updateBreakInstructions(breakInstructions)
       breakInstructions = oldBreakInstructions
-      deallocateRegisters({ expressionRegister, forGeneratorRegister, forStateRegister, forControlRegister })
+      deallocateRegisters(expressionRegisters)
       unregisterVariables(iteratorVariables)
     elseif nodeType == "ReturnStatement" then
       local expressionRegisters = {}
       for index, expression in ipairs(node.Expressions) do
-        local expressionRegister = processExpressionNode(expression)
-        table.insert(expressionRegisters, expressionRegister)
+        local currentExpressionRegisters = { processExpressionNode(expression) }
       end
       local startRegister = expressionRegisters[1] or 0
       local returnAmount = #node.Expressions + 1
       local lastExpression = node.Expressions[#node.Expressions]
-      if lastExpression and isMultiretNode(lastExpression) then
+      if isMultiretNode(lastExpression) then
         returnAmount = 0
       end
       -- OP_RETURN [A, B]    return R(A), ... ,R(A+B-2)
@@ -1739,8 +1738,7 @@ function Compiler.compile(proto)
   end
   local function makeDouble(value)
     local sign = (value < 0 and 1) or 0
-    local value = math.abs(value)
-    local mantissa, exponent = math.frexp(value)
+    local mantissa, exponent = math.frexp(math.abs(value))
 
     if value == 0 then -- zero
       mantissa, exponent = 0, 0
