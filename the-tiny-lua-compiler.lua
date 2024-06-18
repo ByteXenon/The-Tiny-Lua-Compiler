@@ -1272,6 +1272,17 @@ function InstructionGenerator.generate(ast)
         -- OP_LOADNIL [A, B]    R(A) := ... := R(B) := nil
         addInstruction("LOADNIL", expressionRegister, expressionRegister)
       end
+    elseif nodeType == "VarArg" then
+      local returnAmount = node.ReturnValueAmount + 1
+      if returnAmount <= 0 then returnAmount = 0 end
+      -- OP_VARARG [A, B]    R(A), R(A+1), ..., R(A+B-1) = vararg
+      addInstruction("VARARG", expressionRegister, returnAmount)
+      local returnRegisters = { expressionRegister }
+      for index = expressionRegister + 1, expressionRegister + node.ReturnValueAmount - 1 do
+        local register = allocateRegister()
+        table.insert(returnRegisters, index)
+      end
+      return unpack(returnRegisters)
     elseif nodeType == "TableIndex" then
       processExpressionNode(node.Expression, expressionRegister)
       local indexRegister = processExpressionNode(node.Index)
@@ -1656,6 +1667,7 @@ function InstructionGenerator.generate(ast)
     local oldProto  = currentProto
     local proto     = newProto()
     proto.numParams = #parameters
+    proto.isVarArg  = isVarArg
 
     processCodeBlock(codeBlock, true, parameters)
 
