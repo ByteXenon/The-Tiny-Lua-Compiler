@@ -609,9 +609,9 @@ function Parser.parse(tokens)
       table.insert(elements, { TYPE = "TableElement", Key = key, Value = value, IsImplicitKey = isImplicitKey })
 
       consume() -- Consume the last token of the expression
-      local shouldContinue = checkToken("Character", ",") or checkToken("Character", ";")
+      local shouldContinue = checkToken("Character", ",")
       if not shouldContinue then break end
-      consume() -- Consume "," or ";"
+      consume() -- Consume ","
     end
     local lastElement = elements[#elements]
     if lastElement and lastElement.IsImplicitKey then
