@@ -1338,8 +1338,10 @@ function InstructionGenerator.generate(ast)
       local elements         = node.Elements
       local implicitElements = node.ImplicitElements
       local explicitElements = node.ExplicitElements
+      local sizeB = math.min(#implicitElements, 255)
+      local sizeC = math.min(#explicitElements, 255)
       -- OP_NEWTABLE [A, B, C]    R(A) := {} (size = B,C)
-      addInstruction("NEWTABLE", expressionRegister, 0, 0)
+      addInstruction("NEWTABLE", expressionRegister, sizeB, sizeC)
       for _, element in ipairs(explicitElements) do
         local valueRegister = processExpressionNode(element.Value)
         local keyRegister = processExpressionNode(element.Key)
