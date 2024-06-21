@@ -185,7 +185,8 @@ function Tokenizer.tokenize(code)
     return curChar == "-" and lookAhead(1) == "-"
   end
   local function isString()
-    return curChar == '"' or curChar == "'"
+    return (curChar == '"' or curChar == "'")
+        or (curChar == "[" and (lookAhead(1) == "[" or lookAhead(1) == "="))
   end
 
   --// CONSUMERS //--
@@ -253,7 +254,7 @@ function Tokenizer.tokenize(code)
 
     return table.concat(number)
   end
-  local function consumeString()
+  local function consumeSimpleString()
     local delimiter = curChar
     local newString = { }
     consume() -- Consume the delimiter
@@ -274,6 +275,46 @@ function Tokenizer.tokenize(code)
       consume()
     end
     return table.concat(newString)
+  end
+  local function consumeLongString()
+    consume() -- Consume the "[" character
+    local depth = 0
+    local content = ""
+    while curChar == "=" do
+      consume() -- Consume the "=" character
+      depth = depth + 1
+    end
+    if curChar ~= "[" then
+      error("invalid long string delimiter")
+    end
+    consume() -- Consume the "[" character
+    while true do
+      if curChar == "]" then
+        consume() -- Consume the "]" character
+        local closingDepth = 0
+        while curChar == "=" do
+          consume() -- Consume the "=" character
+          closingDepth = closingDepth + 1
+        end
+        if closingDepth == depth and curChar == "]" then
+          break -- Exit the loop, as the closing delimiter is fully matched
+        end
+        -- If it's not a valid closing delimiter, add the "]" and "=" characters to content
+        content = content .. "]" .. string.rep("=", closingDepth)
+      elseif curChar == "\0" then
+        error("Unclosed long comment")
+      end
+
+      content = content .. curChar
+      consume()
+    end
+    return content
+  end
+  local function consumeString()
+    if curChar == "[" then
+      return consumeLongString()
+    end
+    return consumeSimpleString()
   end
   local function consumeOperator()
     local node  = TOKENIZER_OPERATOR_TRIE
