@@ -615,6 +615,7 @@ function Parser.parse(tokens)
   end
   local function consumeTable()
     consume() -- Consume the "{" symbol
+    local elements         = {}
     local implicitElements = {}
     local explicitElements = {}
     local lastImplicitElement
@@ -624,48 +625,46 @@ function Parser.parse(tokens)
     while not checkToken("Character", "}") do
       local key, value
       local isImplicitKey = false
-
-      -- [<expression>] = <expression>
       if checkToken("Character", "[") then
+        -- [<expression>] = <expression>
         consume() -- Consume "["
         key = consumeExpression()
         consume() -- Consume the last token of the key
         expectCharacter("]")
         expectCharacter("=")
         value = consumeExpression()
-
-      -- <identifier> = <expression>
       elseif currentToken.TYPE == "Identifier" and checkToken("Character", "=", lookAhead()) then
+        -- <identifier> = <expression>
         key = { TYPE = "String", Value = currentToken.Value }
-        consume() -- Consume key
-        consume() -- Consume "="
+        consume(2) -- Consume key and "="
         value = consumeExpression()
-
-      -- <expression>
       else
+        -- <expression>
         key = { TYPE = "Number", Value = internalImplicitKey }
         internalImplicitKey = internalImplicitKey + 1
         isImplicitKey = true
         value = consumeExpression()
       end
-      local element = { Key = key, Value = value }
+      local element = { Key = key, Value = value, IsImplicitKey = isImplicitKey }
       local tableToInsert = (isImplicitKey and implicitElements) or explicitElements
       table.insert(tableToInsert, element)
+      table.insert(elements, element)
 
       consume() -- Consume the last token of the expression
       local shouldContinue = checkToken("Character", ",")
       if not shouldContinue then break end
       consume() -- Consume ","
     end
-    local lastImplicitElement = implicitElements[#implicitElements]
-    if lastImplicitElement then
-      local lastImplicitElementTableValue = lastImplicitElement.Value.Value
-      if isMultiretNode(lastImplicitElementTableValue) then
-        lastImplicitElementTableValue.ReturnValueAmount = -1
+    local lastElement = elements[#elements]
+    if lastElement and lastElement.IsImplicitKey then
+      local lastElementValue = lastElement.Value.Value
+      if isMultiretNode(lastElementValue) then
+        lastElementValue.ReturnValueAmount = -1
       end
     end
 
     return { TYPE = "Table",
+      Elements         = elements,
       ImplicitElements = implicitElements,
       ExplicitElements = explicitElements }
   end
