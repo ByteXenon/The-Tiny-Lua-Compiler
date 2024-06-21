@@ -615,7 +615,8 @@ function Parser.parse(tokens)
   end
   local function consumeTable()
     consume() -- Consume the "{" symbol
-    local elements = {}
+    local implicitElements = {}
+    local explicitElements = {}
     local lastImplicitElement
     local internalImplicitKey = 1
 
@@ -647,22 +648,26 @@ function Parser.parse(tokens)
         isImplicitKey = true
         value = consumeExpression()
       end
-      table.insert(elements, { TYPE = "TableElement", Key = key, Value = value, IsImplicitKey = isImplicitKey })
+      local element = { Key = key, Value = value }
+      local tableToInsert = (isImplicitKey and implicitElements) or explicitElements
+      table.insert(tableToInsert, element)
 
       consume() -- Consume the last token of the expression
       local shouldContinue = checkToken("Character", ",")
       if not shouldContinue then break end
       consume() -- Consume ","
     end
-    local lastElement = elements[#elements]
-    if lastElement and lastElement.IsImplicitKey then
-      local lastElementTableValue = lastElement.Value.Value
-      if isMultiretNode(lastElementTableValue) then
-        lastElementTableValue.ReturnValueAmount = -1
+    local lastImplicitElement = implicitElements[#implicitElements]
+    if lastImplicitElement then
+      local lastImplicitElementTableValue = lastImplicitElement.Value.Value
+      if isMultiretNode(lastImplicitElementTableValue) then
+        lastImplicitElementTableValue.ReturnValueAmount = -1
       end
     end
 
-    return { TYPE = "Table", Elements = elements }
+    return { TYPE = "Table",
+      ImplicitElements = implicitElements,
+      ExplicitElements = explicitElements }
   end
   local function consumeFunctionCall(currentExpression)
     consume() -- Consume the "("
