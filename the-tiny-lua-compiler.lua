@@ -1335,30 +1335,27 @@ function InstructionGenerator.generate(ast)
       addInstruction("GETTABLE", expressionRegister, expressionRegister, indexRegister)
       deallocateRegister(indexRegister)
     elseif nodeType == "Table" then
-      local elements = node.Elements
+      local elements         = node.Elements
+      local implicitElements = node.ImplicitElements
+      local explicitElements = node.ExplicitElements
       -- OP_NEWTABLE [A, B, C]    R(A) := {} (size = B,C)
       addInstruction("NEWTABLE", expressionRegister, 0, 0)
-      for _, element in ipairs(elements) do
-        if not element.IsImplicitKey then
-          local valueRegister = processExpressionNode(element.Value)
-          local keyRegister = processExpressionNode(element.Key)
-          deallocateRegisters({ valueRegister, keyRegister })
-          -- OP_SETTABLE [A, B, C]    R(A)[RK(B)] := RK(C)
-          addInstruction("SETTABLE", expressionRegister, keyRegister, valueRegister)
-        end
+      for _, element in ipairs(explicitElements) do
+        local valueRegister = processExpressionNode(element.Value)
+        local keyRegister = processExpressionNode(element.Key)
+        deallocateRegisters({ valueRegister, keyRegister })
+        -- OP_SETTABLE [A, B, C]    R(A)[RK(B)] := RK(C)
+        addInstruction("SETTABLE", expressionRegister, keyRegister, valueRegister)
       end
       local implicitKeyValues = {}
-      local lastImplicitElementValue
-      for _, element in ipairs(elements) do
-        if element.IsImplicitKey then
-          lastImplicitElementValue = element.Value
-          local valueRegister = processExpressionNode(element.Value)
-          table.insert(implicitKeyValues, valueRegister)
-        end
+      for _, element in ipairs(implicitElements) do
+        local valueRegister = processExpressionNode(element.Value)
+        table.insert(implicitKeyValues, valueRegister)
       end
       if #implicitKeyValues > 0 then
         local implicitKeyAmount = #implicitKeyValues
-        if isMultiretNode(lastImplicitElementValue.Value) then
+        local lastImplicitValue = implicitElements[#implicitElements].Value.Value
+        if isMultiretNode(lastImplicitValue) then
           implicitKeyAmount = 0
         end
         -- OP_SETLIST [A, B, C]    R(A)[(C-1)*FPF+i] := R(A+i), 1 <= i <= B
