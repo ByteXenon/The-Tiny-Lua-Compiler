@@ -529,23 +529,27 @@ function Parser.parse(tokens)
     assert(currentToken and currentToken.TYPE == expectedType, "Expected a " .. expectedType .. ", got: " .. actualType)
     assert(currentToken.Value == expectedValue, "Expected '" .. expectedValue .. "'")
     if not skipConsume then consume() end
+    return currentToken
   end
   local function expectTokenType(expectedType, skipConsume)
     local actualType = currentToken and currentToken.TYPE or "nil"
     assert(actualType == expectedType, string.format("Expected a %s, got: %s", expectedType, actualType))
     if not skipConsume then consume() end
+    return currentToken
   end
   local function expectCharacter(character, skipConsume)
     local actualType = currentToken and currentToken.TYPE or "nil"
     assert(currentToken and currentToken.TYPE == "Character", "Expected a character, got: " .. actualType)
     assert(currentToken.Value == character, "Expected '" .. character .. "'")
     if not skipConsume then consume() end
+    return currentToken
   end
   local function expectKeyword(keyword, skipConsume)
     local actualType = currentToken and currentToken.TYPE or "nil"
     assert(currentToken and currentToken.TYPE == "Keyword", "Expected a keyword, got: " .. actualType)
     assert(currentToken.Value == keyword, "Expected '" .. keyword .. "'")
     if not skipConsume then consume() end
+    return currentToken
   end
 
   --// AUXILIARY FUNCTIONS //--
@@ -901,15 +905,13 @@ function Parser.parse(tokens)
   end
   local function parseFor()
     consume() -- Consume the "for" token
-    expectTokenType("Identifier", true)
-    local variableName = currentToken.Value
+    local variableName = expectTokenType("Identifier", true).Value
     consume() -- Consume the variable name
     if checkToken("Character", ",") or checkToken("Keyword", "in") then
       local iteratorVariables = { variableName }
       while checkToken("Character", ",") do
         consume() -- Consume the comma
-        expectTokenType("Identifier", true)
-        local newVariableName = currentToken.Value
+        local newVariableName = expectTokenType("Identifier", true).Value
         table.insert(iteratorVariables, newVariableName)
         consume() -- Consume the variable name
       end
@@ -932,21 +934,18 @@ function Parser.parse(tokens)
   end
   local function parseFunction()
     consume() -- Consume the "function" token
-    expectTokenType("Identifier", true)
-    local variableName = currentToken.Value
+    local variableName = expectTokenType("Identifier", true).Value
     local variableType = getVariableType(variableName)
     local expression = { TYPE = "Variable", Value = variableName, VariableType = variableType }
     local fields, isMethod = { }, false
     while consume() do
       if checkToken("Character", ".") then
         consume() -- Consume the "."
-        expectTokenType("Identifier", true)
-        local fieldName = currentToken.Value
+        local fieldName = expectTokenType("Identifier", true).Value
         table.insert(fields, fieldName)
       elseif checkToken("Character", ":") then
         consume() -- Consume the ":"
-        expectTokenType("Identifier", true)
-        local methodName = currentToken.Value
+        local methodName = expectTokenType("Identifier", true).Value
         table.insert(fields, methodName)
         isMethod = true
         consume() -- Consume the method name
