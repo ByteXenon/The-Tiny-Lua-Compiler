@@ -1618,14 +1618,12 @@ function InstructionGenerator.generate(ast)
     elseif nodeType == "DoBlock" then
       processCodeBlock(node.Codeblock)
     elseif nodeType == "IfStatement" then
-      local conditionCodeblockStatements = { { Condition = node.Condition, Codeblock = node.Codeblock } }
-      for _, elseifNode in ipairs(node.ElseIfs) do
-        table.insert(conditionCodeblockStatements, elseifNode)
-      end
+      local branches      = node.Branches
+      local elseCodeBlock = node.ElseCodeBlock
       local jumpToEndInstructions = {}
-      for index, conditionCodeblockStatement in ipairs(conditionCodeblockStatements) do
-        local condition = conditionCodeblockStatement.Condition
-        local codeBlock = conditionCodeblockStatement.Codeblock
+      for index, branch in ipairs(branches) do
+        local condition = branch.Condition
+        local codeBlock = branch.CodeBlock
         local conditionRegister = processExpressionNode(condition)
         -- OP_TEST [A, C]    if not (R(A) <=> C) then pc++
         addInstruction("TEST", conditionRegister, 0, 0)
@@ -1633,14 +1631,14 @@ function InstructionGenerator.generate(ast)
         local conditionJumpInstruction, conditionJumpInstructionIndex = addInstruction("JMP", 0, 0) -- Placeholder
         deallocateRegister(conditionRegister)
         processCodeBlock(codeBlock)
-        if index < #conditionCodeblockStatements or node.ElseCodeblock then
+        if index < #branches or elseCodeBlock then
           -- OP_JMP [A, sBx]    pc+=sBx
           table.insert(jumpToEndInstructions, { addInstruction("JMP", 0, 0) })
         end
         conditionJumpInstruction[3] = #code - conditionJumpInstructionIndex
       end
-      if node.ElseCodeblock then
-        processCodeBlock(node.ElseCodeblock)
+      if elseCodeBlock then
+        processCodeBlock(elseCodeBlock)
       end
 
       for _, jumpToEndInstruction in ipairs(jumpToEndInstructions) do
