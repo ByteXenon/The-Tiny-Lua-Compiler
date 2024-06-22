@@ -882,26 +882,26 @@ function Parser.parse(tokens)
   end
   local function parseIf()
     consume() -- Consume the "if" token
-    local condition = consumeExpression()
-    consume() -- Consume the last token of the condition
+    local ifCondition = consumeExpression()
+    consume() -- Consume the last token of the if condition
     expectKeyword("then")
-    local codeblock = parseCodeBlock()
-    local elseifs = {}
+    local ifCodeBlock = parseCodeBlock()
+    local branches = { { Condition = ifCondition, CodeBlock = ifCodeBlock } }
     while checkToken("Keyword", "elseif") do
       consume() -- Consume the "elseif" token
       local elseifCondition = consumeExpression()
-      consume() -- Consume the last token of the condition
+      consume() -- Consume the last token of the elseif condition
       expectKeyword("then")
-      local elseifCodeblock = parseCodeBlock()
-      table.insert(elseifs, { Condition = elseifCondition, Codeblock = elseifCodeblock })
+      local elseifCodeBlock = parseCodeBlock()
+      table.insert(branches, { Condition = elseifCondition, CodeBlock = elseifCodeBlock })
     end
-    local elseCodeblock
+    local elseCodeBlock
     if checkToken("Keyword", "else") then
       consume() -- Consume the "else" token
-      elseCodeblock = parseCodeBlock()
+      elseCodeBlock = parseCodeBlock()
     end
     expectKeyword("end", true)
-    return { TYPE = "IfStatement", Condition = condition, Codeblock = codeblock, ElseIfs = elseifs, ElseCodeblock = elseCodeblock }
+    return { TYPE = "IfStatement", Branches = branches, ElseCodeBlock = elseCodeBlock }
   end
   local function parseFor()
     consume() -- Consume the "for" token
