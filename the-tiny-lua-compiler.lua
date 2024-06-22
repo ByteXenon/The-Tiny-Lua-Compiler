@@ -1197,12 +1197,15 @@ function InstructionGenerator.generate(ast)
     local nodeType = node.TYPE
     return nodeType == "FunctionCall" or nodeType == "MethodCall" or nodeType == "VarArg"
   end
-  local function updateBreakInstructions(list)
+  local function updateJumpInstruction(instructionIndex)
     local currentInstructionIndex = #code
-    for _, breakInstructionIndex in ipairs(list) do
-      local instruction  = code[breakInstructionIndex]
-      local jumpDistance = currentInstructionIndex - breakInstructionIndex
-      instruction[3] = jumpDistance
+    local jumpDistance = currentInstructionIndex - instructionIndex
+    local instruction = code[instructionIndex]
+    instruction[3] = jumpDistance
+  end
+  local function updateJumpInstructions(list)
+    for _, instructionIndex in ipairs(list) do
+      updateJumpInstruction(instructionIndex)
     end
   end
   local function findOrCreateConstant(value)
@@ -1270,8 +1273,7 @@ function InstructionGenerator.generate(ast)
       deallocateRegisters(argumentRegisters)
       local returnRegisters = { expressionRegister }
       for index = expressionRegister + 1, expressionRegister + node.ReturnValueAmount - 1 do
-        local register = allocateRegister()
-        table.insert(returnRegisters, index)
+        table.insert(returnRegisters, allocateRegister())
       end
       return unpack(returnRegisters)
     elseif nodeType == "MethodCall" then
@@ -1298,8 +1300,7 @@ function InstructionGenerator.generate(ast)
       deallocateRegisters(argumentRegisters)
       local returnRegisters = { expressionRegister }
       for index = expressionRegister + 1, expressionRegister + node.ReturnValueAmount - 1 do
-        local register = allocateRegister()
-        table.insert(returnRegisters, index)
+        table.insert(returnRegisters, allocateRegister())
       end
       return unpack(returnRegisters)
     elseif nodeType == "Constant" then
@@ -1319,8 +1320,7 @@ function InstructionGenerator.generate(ast)
       addInstruction("VARARG", expressionRegister, returnAmount)
       local returnRegisters = { expressionRegister }
       for index = expressionRegister + 1, expressionRegister + node.ReturnValueAmount - 1 do
-        local register = allocateRegister()
-        table.insert(returnRegisters, index)
+        table.insert(returnRegisters, allocateRegister())
       end
       return unpack(returnRegisters)
     elseif nodeType == "TableIndex" then
@@ -1390,7 +1390,7 @@ function InstructionGenerator.generate(ast)
         -- OP_JMP [A, sBx]    pc+=sBx
         local jumpInstruction, jumpInstructionIndex = addInstruction("JMP", 0, 0) -- Placeholder
         processExpressionNode(node.Right, expressionRegister)
-        jumpInstruction[3] = #code - jumpInstructionIndex
+        updateJumpInstruction(jumpInstructionIndex)
       elseif COMPILER_COMPARISON_OPERATOR_LOOKUP[nodeOperator] then
         local leftExpressionRegister = processExpressionNode(node.Left)
         local rightExpressionRegister = processExpressionNode(node.Right)
@@ -1524,18 +1524,18 @@ function InstructionGenerator.generate(ast)
         addInstruction("LOADK", stepRegister, findOrCreateConstant(1))
       end
       -- OP_FORPREP [A, sBx]    R(A)-=R(A+2) pc+=sBx
-      local forprepInstruction = addInstruction("FORPREP", startRegister, 0) -- Placeholder
+      local forprepInstruction, forprepInstructionIndex = addInstruction("FORPREP", startRegister, 0)
       local loopStart = #code
       registerVariable(variableName, startRegister)
       local oldBreakInstructions = breakInstructions
       breakInstructions = {}
       processCodeBlock(codeblock)
       local loopEnd = #code
+      updateJumpInstruction(forprepInstructionIndex)
       -- OP_FORLOOP [,A sBx]   R(A)+=R(A+2)
       --                       if R(A) <?= R(A+1) then { pc+=sBx R(A+3)=R(A) }
       addInstruction("FORLOOP", startRegister, loopStart - loopEnd - 1)
-      forprepInstruction[3] = loopEnd - loopStart
-      updateBreakInstructions(breakInstructions)
+      updateJumpInstructions(breakInstructions)
       breakInstructions = oldBreakInstructions
       unregisterVariable(variableName)
       deallocateRegisters({ startRegister, endRegister, stepRegister })
@@ -1546,7 +1546,7 @@ function InstructionGenerator.generate(ast)
       local iteratorRegisters = {}
       local expressionRegisters = { processExpressionNode(expressions[1]) }
       -- OP_JMP [A, sBx]    pc+=sBx
-      local startJmpInstruction = addInstruction("JMP", 0, 0) -- Placeholder
+      local startJmpInstruction, startJmpInstructionIndex = addInstruction("JMP", 0, 0) -- Placeholder
       local forGeneratorRegister = expressionRegisters[1]
       local forStateRegister = expressionRegisters[2]
       local forControlRegister = expressionRegisters[3]
@@ -1562,13 +1562,13 @@ function InstructionGenerator.generate(ast)
       local oldBreakInstructions = breakInstructions
       breakInstructions = {}
       processCodeBlock(codeblock)
+      updateJumpInstruction(startJmpInstructionIndex)
       -- OP_TFORLOOP [A, C]    R(A+3), ... ,R(A+2+C) := R(A)(R(A+1), R(A+2))
       --                       if R(A+3) ~= nil then R(A+2)=R(A+3) else pc++
       local tforloopInstruction = addInstruction("TFORLOOP", forGeneratorRegister, 0, #iteratorVariables)
-      startJmpInstruction[3] = #code - loopStart - 1
       -- OP_JMP [A, sBx]    pc+=sBx
       addInstruction("JMP", 0, loopStart - #code - 1)
-      updateBreakInstructions(breakInstructions)
+      updateJumpInstructions(breakInstructions)
       breakInstructions = oldBreakInstructions
       deallocateRegisters(expressionRegisters)
       unregisterVariables(iteratorVariables)
@@ -1595,16 +1595,16 @@ function InstructionGenerator.generate(ast)
       -- OP_TEST [A, C]    if not (R(A) <=> C) then pc++
       addInstruction("TEST", conditionRegister, 0, 0)
       -- OP_JMP [A, sBx]    pc+=sBx
-      local jumpInstruction = addInstruction("JMP", 0, 0) -- Placeholder
+      local jumpInstruction, jumpInstructionIndex = addInstruction("JMP", 0, 0)
       deallocateRegister(conditionRegister)
       local codeStart = #code
       local oldBreakInstructions = breakInstructions
       breakInstructions = {}
       processCodeBlock(node.Codeblock)
       -- OP_JMP [A, sBx]    pc+=sBx
-      local jumpBackInstruction = addInstruction("JMP", 0, loopStart - #code - 1)
-      jumpInstruction[3] = #code - codeStart
-      updateBreakInstructions(breakInstructions)
+      addInstruction("JMP", 0, loopStart - #code - 1)
+      updateJumpInstruction(jumpInstructionIndex)
+      updateJumpInstructions(breakInstructions)
       breakInstructions = oldBreakInstructions
     elseif nodeType == "RepeatLoop" then
       local loopStart = #code
@@ -1613,7 +1613,7 @@ function InstructionGenerator.generate(ast)
       -- OP_TEST [A, C]    if not (R(A) <=> C) then pc++
       addInstruction("TEST", conditionRegister, 0, 0)
       -- OP_JMP [A, sBx]    pc+=sBx
-      local jumpInstruction = addInstruction("JMP", 0, loopStart - #code - 1)
+      addInstruction("JMP", 0, loopStart - #code - 1)
       deallocateRegister(conditionRegister)
     elseif nodeType == "DoBlock" then
       processCodeBlock(node.Codeblock)
@@ -1633,18 +1633,16 @@ function InstructionGenerator.generate(ast)
         processCodeBlock(codeBlock)
         if index < #branches or elseCodeBlock then
           -- OP_JMP [A, sBx]    pc+=sBx
-          table.insert(jumpToEndInstructions, { addInstruction("JMP", 0, 0) })
+          local instruction, jumpInstructionIndex = addInstruction("JMP", 0, 0)
+          table.insert(jumpToEndInstructions, jumpInstructionIndex)
         end
-        conditionJumpInstruction[3] = #code - conditionJumpInstructionIndex
+        updateJumpInstruction(conditionJumpInstructionIndex)
       end
       if elseCodeBlock then
         processCodeBlock(elseCodeBlock)
       end
 
-      for _, jumpToEndInstruction in ipairs(jumpToEndInstructions) do
-        local instructionTable, instructionIndex = jumpToEndInstruction[1], jumpToEndInstruction[2]
-        instructionTable[3] = #code - instructionIndex
-      end
+      updateJumpInstructions(jumpToEndInstructions)
     elseif nodeType == "VariableAssignment" then
       local expressionRegisters = {}
       for index, expression in ipairs(node.Expressions) do
