@@ -146,26 +146,28 @@ local expectedAST = {
   },
   {
     TYPE = "IfStatement",
-    Condition = {
-      TYPE = "Expression",
-      Value = { TYPE = "Number", Value = 1 }
-    },
-    Codeblock = {
-      TYPE = "Group",
+    Branches = {
       {
-        TYPE = "FunctionCall",
-        Expression = { TYPE = "Variable", VariableType = "Global", Value = "print" },
-        Arguments = { { TYPE = "Number", Value = 1 } },
-        ReturnValueAmount = 0
-      }
-    },
-    ElseIfs = {
+        Condition = {
+          TYPE = "Expression",
+          Value = { TYPE = "Number", Value = 1 }
+        },
+        CodeBlock = {
+          TYPE = "Group",
+          {
+            TYPE = "FunctionCall",
+            Expression = { TYPE = "Variable", VariableType = "Global", Value = "print" },
+            Arguments = { { TYPE = "Number", Value = 1 } },
+            ReturnValueAmount = 0
+          }
+        }
+      },
       {
         Condition = {
           TYPE = "Expression",
           Value = { TYPE = "Number", Value = 2 }
         },
-        Codeblock = {
+        CodeBlock = {
           TYPE = "Group",
           {
             TYPE = "FunctionCall",
@@ -176,7 +178,7 @@ local expectedAST = {
         }
       }
     },
-    ElseCodeblock = {
+    ElseCodeBlock = {
       TYPE = "Group",
       {
         TYPE = "FunctionCall",
