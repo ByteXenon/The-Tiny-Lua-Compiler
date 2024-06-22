@@ -77,18 +77,17 @@ local function createLookupTable(list)
   end
   return lookup
 end
-local function makeTrie(table)
-  local trieTable = {}
-  for _, op in ipairs(table) do
-    local node = trieTable
-    for index = 1, #op do
-      local character = op:sub(index, index)
-      node[character] = node[character] or {}
-      node = node[character]
+local function makeTrie(ops)
+  local trie = {}
+  for _, op in ipairs(ops) do
+    local node = trie
+    for char in op:gmatch(".") do
+      node[char] = node[char] or {}
+      node = node[char]
     end
     node.Value = op
   end
-  return trieTable
+  return trie
 end
 
 --/// Tokenizer ///--
@@ -329,10 +328,8 @@ function Tokenizer.tokenize(code)
       operator = node.Value
       index    = index + 1
     end
-    if operator then
-      consume(#operator - 1)
-    end
-
+    if not operator then return end
+    consume(#operator - 1)
     return operator
   end
   local function consumeShortComment()
@@ -364,8 +361,7 @@ function Tokenizer.tokenize(code)
     end
   end
   local function consumeComment()
-    consume() -- Consume the "-" character
-    consume() -- Consume the "-" character
+    consume(2) -- Consume the "--"
     if curChar == "[" then
       return consumeLongComment()
     end
