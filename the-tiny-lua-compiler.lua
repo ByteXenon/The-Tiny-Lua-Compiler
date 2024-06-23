@@ -68,8 +68,117 @@ C:::::C              O:::::O     O:::::OM::::::M    M:::::M    M::::::M  P::::P 
      CCC::::::::::::C   OO:::::::::OO   M::::::M               M::::::MP::::::::P          I::::::::IL::::::::::::::::::::::LE::::::::::::::::::::ER::::::R     R:::::R
         CCCCCCCCCCCCC     OOOOOOOOO     MMMMMMMM               MMMMMMMMPPPPPPPPPP          IIIIIIIIIILLLLLLLLLLLLLLLLLLLLLLLLEEEEEEEEEEEEEEEEEEEEEERRRRRRRR     RRRRRRR
 
-]]
+--]]
 
+--[[
+  Today we're going to write a compiler for Lua 5.1 in Lua.
+  But not just any compiler... a super duper easy and teeny tiny
+  compiler! A compiler that is so small that if you remove all the
+  comments this file would be ~1700 lines of actual code.
+
+  The compiler will be able to tokenize, parse, and compile (almost)
+  any Lua code you throw at it. It will even be able to compile itself!
+
+  So, let's get started!
+
+  ----------------------------------------------------------------------------
+
+  Our journey will cover transforming Lua code into Lua bytecode, which the
+  Lua Virtual Machine (VM) can understand and execute.
+
+  Here's a quick breakdown of what we're doing:
+
+   Tokenizer: Breaks down Lua code into tokens, the basic building blocks
+    like numbers, strings, and keywords.
+
+   Parser: Converts tokens into an Abstract Syntax Tree (AST), a tree
+    representation showing the structure of the code.
+
+   Instruction Generator: Transforms the AST into Lua VM instructions, the
+    low-level commands that the Lua VM can execute.
+
+   Compiler: Turns Lua VM instructions into Lua bytecode, ready for
+    execution by the Lua VM.
+
+  This process is a bit like translating a book from one language to another,
+  then adapting it into a screenplay. Each step refines and transforms the
+  content, making it ready for the final audience: the Lua VM.
+--]]
+
+--[[
+Glossary:
+  Token:
+    The smallest element of programming language syntax that the compiler recognizes.
+    Tokens are the building blocks of code, akin to words in a language, and include
+    elements like numbers, strings, keywords (e.g., `if`, `while`), identifiers (variable names),
+    and operators (`+`, `-`, `*`, `/`). The tokenizer, or lexical analyzer, scans the source code
+    to identify and produce these tokens.
+
+  AST (Abstract Syntax Tree):
+    A hierarchical tree representation that outlines the grammatical structure of the code.
+    Each node in the tree denotes a construct occurring in the source code. The AST is
+    generated from the tokens produced by the tokenizer and serves as a crucial structure
+    for further stages of compilation, such as optimization and code generation. It abstracts
+    away the syntax details, focusing on the code's logical structure.
+
+  VM (Virtual Machine):
+    In the context of programming languages, a VM specifically refers to a runtime engine
+    that executes bytecode or intermediate code. This VM is not to be confused with system
+    virtual machines (like VirtualBox or VMWare) that emulate a full hardware system;
+    it's a process virtual machine designed to execute code in a high-level, portable format.
+
+  Bytecode:
+    A form of instruction set designed for efficient execution by a software VM. Bytecode
+    is more abstract than machine code and is not tied to any specific hardware architecture.
+    It serves as an intermediate representation of the code, optimized for portability and
+    quick execution. Bytecode is typically generated from the AST and is executed by the VM.
+    Unlike human-readable source code or assembly language, bytecode is binary and is
+    intended to be read and understood by the VM rather than humans.
+
+  Proto (Function Prototype):
+    In Lua, a function prototype is a data structure that contains metadata about a function,
+    including its bytecode, the number of parameters it accepts, its local variables, and its
+    upvalues (variables captured from the surrounding scope). The Lua VM uses this information
+    to execute the function and manage its execution context. Each Lua function, whether
+    defined in Lua or C, is represented internally by a function prototype.
+
+  Closure:
+    A powerful feature in many programming languages, including Lua, where a function
+    is able to remember and access its lexical scope even when the function is executing
+    outside that scope. This is particularly useful for creating private variables and
+    maintaining state across function calls. Closures are created at runtime and can
+    capture and carry with them any upvalues from their defining scope, enabling
+    function-level encapsulation and data hiding.
+
+  Scope:
+    Defines the visibility and lifetime of variables and parameters in a program. In Lua,
+    scope is determined by the location of variable declarations. Variables can be global,
+    local, or upvalues. Global variables are accessible from anywhere in the code. Local
+    variables have their visibility limited to the block where they are declared, enhancing
+    modularity and preventing unintended modifications. Upvalues are local variables from
+    an enclosing function's scope, which are captured by closures, allowing the closure to
+    access and modify these variables even when the function is executed outside its original scope.
+--]]
+
+--[[
+    ============================================================================
+                                  (ﾉ◕ヮ◕)ﾉ*:･ﾟ✧
+                              THE HELPER FUNCTIONS!
+    ============================================================================
+
+    Building a compiler from scratch necessitates a set of utility functions to
+    streamline common tasks, enhancing both efficiency and readability. Below,
+    we introduce two essential helper functions pivotal to our compiler's core
+    functionality.
+--]]
+
+--[[
+  This function takes a list of elements and transforms it into a lookup table.
+  The primary purpose of this table is to provide a quick and efficient way to
+  check for the existence of a specific element in the list. By converting the
+  list into a lookup table, we can achieve O(1) time complexity for element
+  lookups, significantly enhancing the performance of our compiler.
+--]]
 local function createLookupTable(list)
   local lookup = {}
   for _, value in ipairs(list) do
@@ -77,10 +186,23 @@ local function createLookupTable(list)
   end
   return lookup
 end
+
+--[[
+  The trie data structure, constructed by this function,
+  is an efficient information retrieval mechanism, particularly suited for
+  matching against a set of strings, such as operators in our case. By
+  organizing operators in a trie, we can perform rapid prefix-based searches
+  to identify longer, compound operators (like '==', '>=', etc.) in the
+  tokenization phase without backtracking. This method enhances the
+  performance and accuracy of our lexical analysis, ensuring that operators
+  are correctly identified and classified from the stream of characters.
+--]]
 local function makeTrie(ops)
+  -- Initialize the trie
   local trie = {}
   for _, op in ipairs(ops) do
     local node = trie
+    -- Split the operator into individual characters
     for char in op:gmatch(".") do
       node[char] = node[char] or {}
       node = node[char]
@@ -90,7 +212,22 @@ local function makeTrie(ops)
   return trie
 end
 
---/// Tokenizer ///--
+--[[
+    ============================================================================
+                                    (•_•)?!
+                              TOKENIZER CONSTANTS
+    ============================================================================
+
+    Before diving into the tokenizer's implementation, let's explore the
+    essential constants and lookup tables that will guide the tokenization
+    process. These constants include Lua operators, escaped character
+    sequences, reserved keywords, and Lua's boolean and nil constants.
+    By defining these constants upfront, we can streamline the tokenization
+    logic and ensure accurate identification and classification of tokens
+    within the Lua code.
+--]]
+
+-- Lua operators for tokenization: arithmetic, comparison, logical.
 local TOKENIZER_LUA_OPERATORS = {
   "^", "*", "/", "%",
   "+", "-", "<", ">",
@@ -99,6 +236,8 @@ local TOKENIZER_LUA_OPERATORS = {
   "<=",  ">=", "==",  "~=",
   "and", "or", "not", ".."
 }
+
+-- Maps escaped sequences to characters for string literals.
 local TOKENIZER_ESCAPED_CHARACTER_CONVERSIONS = {
   ["a"]     = "\a", -- bell
   ["b"]     = "\b", -- backspace
@@ -108,23 +247,70 @@ local TOKENIZER_ESCAPED_CHARACTER_CONVERSIONS = {
   ["t"]     = "\t", -- horizontal tab
   ["v"]     = "\v", -- vertical tab
 
-  [ "\\" ] = "\\",   -- backslash
+  [ "\\" ] = "\\",  -- backslash
   [ "\"" ] = "\"",  -- double quote
   [ "\'" ] = "\'",  -- single quote
 }
 
-local TOKENIZER_LUA_CONSTANTS_LOOKUP     = createLookupTable({ "true", "false", "nil" })
-local TOKENIZER_RESERVED_KEYWORDS_LOOKUP = createLookupTable({
-"while",    "do",     "end",   "for",
-"local",    "repeat", "until", "return",
-"in",       "if",     "else",  "elseif",
-"function", "then",   "break", "continue" })
-local TOKENIZER_LUA_OPERATORS_LOOKUP = createLookupTable(TOKENIZER_LUA_OPERATORS)
-local TOKENIZER_OPERATOR_TRIE        = makeTrie(TOKENIZER_LUA_OPERATORS)
+-- Lookup for Lua's boolean and nil constants.
+local TOKENIZER_LUA_CONSTANTS_LOOKUP = createLookupTable({ "true", "false", "nil" })
 
---* Tokenizer *--
+-- Lookup for Lua's reserved keywords.
+local TOKENIZER_RESERVED_KEYWORDS_LOOKUP = createLookupTable({
+  "while",    "do",     "end",   "for",
+  "local",    "repeat", "until", "return",
+  "in",       "if",     "else",  "elseif",
+  "function", "then",   "break", "continue"
+})
+
+-- Lookup for operators.
+local TOKENIZER_LUA_OPERATORS_LOOKUP = createLookupTable(TOKENIZER_LUA_OPERATORS)
+
+-- Trie for efficient operator searching.
+local TOKENIZER_OPERATOR_TRIE = makeTrie(TOKENIZER_LUA_OPERATORS)
+
+--[[
+    ============================================================================
+                                 (/^▽^)/
+                              THE TOKENIZER!
+    ============================================================================
+
+    Imagine the tokenizer as a conveyor belt. You put Lua code in one end,
+    and tokens come out the other end. The tokenizer will convert the input
+    code into a list of tokens that the parser can understand.
+    Tokens are the smallest building blocks of a programming language. They can be
+    anything from a number, a string, a keyword, an identifier, or an operator.
+    Typically, tokenizers strip out comments and whitespace, as they are not
+    needed for the parsing phase, our tokenizer follows the same approach.
+
+    Here's an example of how the tokenizer breaks down a simple Lua script:
+    ```lua
+    if (x == 10) then
+      print("Hello, world!")
+    end
+    ```
+    The resulting tokens would look like this:
+    |-----------------|------------------|
+    | Type            | Value            |
+    |-----------------|------------------|
+    | Keyword         | if               |
+    | Character       | (                |
+    | Identifier      | x                |
+    | Operator        | ==               |
+    | Number          | 10               |
+    | Character       | )                |
+    | Keyword         | then             |
+    | Identifier      | print            |
+    | Character       | (                |
+    | String          | Hello, world!    |
+    | Character       | )                |
+    | Keyword         | end              |
+    |-----------------|------------------|
+--]]
+
 local Tokenizer = {}
 function Tokenizer.tokenize(code)
+  --// LOCAL VARIABLES //--
   local charStream, charStreamLen = {}, 0
   for char in code:gmatch(".") do
     charStreamLen = charStreamLen + 1
@@ -420,7 +606,20 @@ function Tokenizer.tokenize(code)
   return tokenize()
 end
 
---/// Parser ///--
+--[[
+    ============================================================================
+                                  (•_•)?
+                              PARSER CONSTANTS
+    ============================================================================
+
+    Before diving into the parser's implementation, let's explore the essential
+    constants and lookup tables that will guide the parsing process. These
+    constants include Lua operators, unary operators, and stop keywords.
+    By defining these constants upfront, we can streamline the parsing logic
+    and ensure accurate identification and classification of tokens within the
+    Lua code.
+--]]
+
 local PARSER_UNARY_OPERATOR_PRECEDENCE = 8
 local PARSER_STOP_KEYWORDS       = createLookupTable({ "end", "else", "elseif", "until" })
 local PARSER_OPERATOR_PRECEDENCE = { ["+"]   = {6, 6},  ["-"]  = {6, 6},
@@ -435,7 +634,31 @@ local PARSER_LUA_BINARY_OPERATORS = createLookupTable({ "+",  "-",   "*",  "/",
                                       "~=", "<",   ">",  "<=",
                                       ">=", "and", "or" })
 
---* Parser *--
+--[[
+    ============================================================================
+                                  ヽ/❀o ل͜ o\ﾉ
+                                 THE PARSER!!!
+    ============================================================================
+
+    The parser is responsible for converting the list of tokens into an
+    Abstract Syntax Tree (AST). The AST is a tree representation of the
+    structure of the code. Each node in the tree represents a different
+    part of the code. For example, a node could represent a function call,
+    a binary operation, or a variable declaration. The parser will also
+    perform some basic syntax checking to ensure the code is valid.
+    One of the most interesting parts of the parser is the expression parser,
+    which is responsible for placing operators and operands in the correct
+    order based on their precedence and associativity.
+
+    Here's an example of how the parser converts a simple Lua script into an
+    Abstract Syntax Tree (AST):
+    ```lua
+    local x = 10 + 20
+    ```
+    The resulting AST would look like this:
+
+--]]
+
 local Parser = {}
 function Parser.parse(tokens)
   local tokens            = tokens
@@ -1048,7 +1271,19 @@ function Parser.parse(tokens)
   return parse()
 end
 
---// Compiler //--
+--[[
+    ============================================================================
+                                     (•_•)?
+                          INSTRUCTION GENERATOR CONSTANTS
+    ============================================================================
+
+    Before diving into the compiler's implementation, let's explore the essential
+    constants and lookup tables that will guide the compilation process. These
+    constants include Lua operators, unary operators, and stop keywords.
+    By defining these constants upfront, we can streamline the compilation logic
+    and ensure accurate identification and classification of tokens within the
+    Lua code.
+--]]
 local unpack = (unpack or table.unpack)
 
 local COMPILER_SIMPLE_ARICHMETIC_OPERATOR_LOOKUP = {
@@ -1065,7 +1300,29 @@ local COMPILER_COMPARISON_INSTRUCTION_LOOKUP = {
 local COMPILER_COMPARISON_OPERATOR_LOOKUP = createLookupTable({"==", "~=", "<", ">", "<=", ">="})
 local COMPILER_CONTROL_FLOW_OPERATOR_LOOKUP = createLookupTable({"and", "or"})
 
---* InstructionGenerator *--
+--[[
+    ============================================================================
+                                 (づ｡◕‿‿◕｡)づ
+                         THE INSTRUCTION GENERATOR!!!
+    ============================================================================
+
+    Possibly the most complex part of the compiler, the Instruction Generator is
+    responsible for converting the AST into Lua instructions, which are
+    similar to assembly instructions, but they are much higher level,
+    because they're being executed in the Lua VM (Virtual Machine),
+    not on a physical CPU. The Instruction Generator will also be responsible
+    for generating the function prototypes, which are used to store
+    information about the function, such as the number of arguments,
+    the number of local variables, and the number of upvalues.
+
+    Here's an example of how the Instruction Generator converts a simple AST
+    into Lua instructions:
+    ```lua
+ 
+    ```
+    The resulting proto would look like this:
+
+--]]
 local InstructionGenerator = {}
 function InstructionGenerator.generate(ast)
   local breakInstructions
@@ -1738,6 +1995,13 @@ function InstructionGenerator.generate(ast)
   return generate()
 end
 
+--[[
+  ============================================================================
+                                    (•_•)?
+                              COMPILER CONSTANTS
+  ============================================================================
+--]]
+
 local MODE_iABC = 0
 local MODE_iABx = 1
 local MODE_iAsBx = 2
@@ -1755,7 +2019,18 @@ local COMPILER_OPCODE_LOOKUP = {
   ["CLOSURE"]  = {36, MODE_iABx}, ["VARARG"]    = {37, MODE_iABC}
 }
 
---* Compiler *--
+--[[
+  ============================================================================
+                                   (۶* ‘ヮ’)۶”
+                          !!!!!!!!THE COMPILER!!!!!!!!
+  ============================================================================
+
+  The final part of the compiler is the compiler itself (duh). The
+  compiler is responsible for converting the given Lua Function Prototypes
+  into Lua bytecode. The compiler will implement binary writing logic
+  to write the bytecode to a file, which can then be executed by the
+--]]
+
 local Compiler = {}
 function Compiler.compile(proto)
   --// BYTE MANIPULATION (needed for compiling to bytecode) //--
@@ -1910,6 +2185,7 @@ function Compiler.compile(proto)
   return compile()
 end
 
+-- Now I'm just exporting everything...
 return {
   Tokenizer = Tokenizer,
   Parser = Parser,
