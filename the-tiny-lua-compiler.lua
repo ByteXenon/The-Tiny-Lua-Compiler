@@ -1417,8 +1417,216 @@ function InstructionGenerator.generate(ast)
     return instruction, #code
   end
 
-  --// CODE GENERATION //--
   local processExpressionNode, processStatementNode, processCodeBlock, processFunction
+
+  --// EXPRESSION COMPILERS //--
+  local function compileNumberNode(node, expressionRegister)
+    local constantIndex = findOrCreateConstant(node.Value)
+    -- OP_LOADK [A, Bx]    R(A) := Kst(Bx)
+    addInstruction("LOADK", expressionRegister, constantIndex)
+    return expressionRegister
+  end
+  local function compileStringNode(node, expressionRegister)
+    local constantIndex = findOrCreateConstant(node.Value)
+    -- OP_LOADK [A, Bx]    R(A) := Kst(Bx)
+    addInstruction("LOADK", expressionRegister, constantIndex)
+    return expressionRegister
+  end
+  local function compileFunctionNode(node, expressionRegister)
+    local codeblock  = node.Codeblock
+    local parameters = node.Parameters
+    local isVarArg   = node.isVarArg
+    processFunction(codeblock, expressionRegister, parameters, isVarArg)
+    return expressionRegister
+  end
+  local function compileFunctionCallNode(node, expressionRegister)
+    processExpressionNode(node.Expression, expressionRegister)
+    local argumentRegisters = {}
+    for index, argument in ipairs(node.Arguments) do
+      local currentArgumentRegisters = { processExpressionNode(argument) }
+      for _, register in ipairs(currentArgumentRegisters) do
+        table.insert(argumentRegisters, register)
+      end
+    end
+    local returnAmount = node.ReturnValueAmount + 1
+    local argumentAmount = #node.Arguments + 1
+    if returnAmount <= 0 then returnAmount = 0 end
+    if node.Arguments[#node.Arguments] then
+      local lastArgument = node.Arguments[#node.Arguments]
+      if isMultiretNode(lastArgument) then
+        argumentAmount = 0
+      end
+    end
+    -- OP_CALL [A, B, C]    R(A), ... ,R(A+C-2) := R(A)(R(A+1), ... ,R(A+B-1))
+    addInstruction("CALL", expressionRegister, argumentAmount, returnAmount)
+    deallocateRegisters(argumentRegisters)
+    local returnRegisters = { expressionRegister }
+    for index = expressionRegister + 1, expressionRegister + node.ReturnValueAmount - 1 do
+      table.insert(returnRegisters, allocateRegister())
+    end
+    return unpack(returnRegisters)
+  end
+  local function compileMethodCallNode(node, expressionRegister)
+    local nodeIndexIndex      = node.Expression.Index
+    local nodeIndexExpression = node.Expression.Expression
+    processExpressionNode(nodeIndexExpression, expressionRegister)
+    local selfArgumentRegister = allocateRegister()
+    local nodeIndexRegister = processExpressionNode(nodeIndexIndex)
+    -- OP_SELF [A, B, C]    R(A+1) := R(B) R(A) := R(B)[RK(C)]
+    addInstruction("SELF", expressionRegister, expressionRegister, nodeIndexRegister)
+    deallocateRegister(nodeIndexRegister)
+    local argumentRegisters = { selfArgumentRegister } -- Allocate the self register
+    for index, argument in ipairs(node.Arguments) do
+      local currentArgumentRegisters = { processExpressionNode(argument) }
+      for _, register in ipairs(currentArgumentRegisters) do
+        table.insert(argumentRegisters, register)
+      end
+    end
+    local returnAmount = node.ReturnValueAmount + 1
+    local argumentAmount = #node.Arguments + 2
+    if returnAmount <= 0 then returnAmount = 0 end
+    -- OP_CALL [A, B, C]    R(A), ... ,R(A+C-2) := R(A)(R(A+1), ... ,R(A+B-1))
+    addInstruction("CALL", expressionRegister, argumentAmount, returnAmount)
+    deallocateRegisters(argumentRegisters)
+    local returnRegisters = { expressionRegister }
+    for index = expressionRegister + 1, expressionRegister + node.ReturnValueAmount - 1 do
+      table.insert(returnRegisters, allocateRegister())
+    end
+    return unpack(returnRegisters)
+  end
+  local function compileConstantNode(node, expressionRegister)
+    local nodeValue = node.Value
+    if nodeValue ~= "nil" then
+      local secondValue = (nodeValue == "true" and 1) or 0
+      -- OP_LOADBOOL [A, B, C]    R(A) := (Bool)B if (C) pc++
+      addInstruction("LOADBOOL", expressionRegister, secondValue, 0)
+    else
+      -- OP_LOADNIL [A, B]    R(A) := ... := R(B) := nil
+      addInstruction("LOADNIL", expressionRegister, expressionRegister)
+    end
+    return expressionRegister
+  end
+  local function compileVarArgNode(node, expressionRegister)
+    local returnAmount = node.ReturnValueAmount + 1
+    if returnAmount <= 0 then returnAmount = 0 end
+    -- OP_VARARG [A, B]    R(A), R(A+1), ..., R(A+B-1) = vararg
+    addInstruction("VARARG", expressionRegister, returnAmount)
+    local returnRegisters = { expressionRegister }
+    for index = expressionRegister + 1, expressionRegister + node.ReturnValueAmount - 1 do
+      table.insert(returnRegisters, allocateRegister())
+    end
+    return unpack(returnRegisters)
+  end
+  local function compileTableIndexNode(node, expressionRegister)
+    processExpressionNode(node.Expression, expressionRegister)
+    local indexRegister = processExpressionNode(node.Index)
+    -- OP_GETTABLE [A, B, C]    R(A) := R(B)[RK(C)]
+    addInstruction("GETTABLE", expressionRegister, expressionRegister, indexRegister)
+    deallocateRegister(indexRegister)
+    return expressionRegister
+  end
+  local function compileTableNode(node, expressionRegister)
+    local elements         = node.Elements
+    local implicitElements = node.ImplicitElements
+    local explicitElements = node.ExplicitElements
+    local sizeB = math.min(#implicitElements, 255)
+    local sizeC = math.min(#explicitElements, 255)
+    -- OP_NEWTABLE [A, B, C]    R(A) := {} (size = B,C)
+    addInstruction("NEWTABLE", expressionRegister, sizeB, sizeC)
+    for _, element in ipairs(explicitElements) do
+      local valueRegister = processExpressionNode(element.Value)
+      local keyRegister = processExpressionNode(element.Key)
+      deallocateRegisters({ valueRegister, keyRegister })
+      -- OP_SETTABLE [A, B, C]    R(A)[RK(B)] := RK(C)
+      addInstruction("SETTABLE", expressionRegister, keyRegister, valueRegister)
+    end
+    local implicitKeyValues = {}
+    for _, element in ipairs(implicitElements) do
+      local valueRegister = processExpressionNode(element.Value)
+      table.insert(implicitKeyValues, valueRegister)
+    end
+    if #implicitKeyValues > 0 then
+      local implicitKeyAmount = #implicitKeyValues
+      local lastImplicitValue = implicitElements[#implicitElements].Value.Value
+      if isMultiretNode(lastImplicitValue) then
+        implicitKeyAmount = 0
+      end
+      -- OP_SETLIST [A, B, C]    R(A)[(C-1)*FPF+i] := R(A+i), 1 <= i <= B
+      addInstruction("SETLIST", expressionRegister, implicitKeyAmount, 1)
+      deallocateRegisters(implicitKeyValues)
+    end
+    return expressionRegister
+  end
+  local function compileVariableNode(node, expressionRegister)
+    local variableType = node.VariableType
+    if variableType == "Global" then
+      -- OP_GETGLOBAL [A, Bx]    R(A) := Gbl[Kst(Bx)]
+      addInstruction("GETGLOBAL", expressionRegister, findOrCreateConstant(node.Value))
+    elseif variableType == "Local" then
+      local variableRegister = findVariableRegister(node.Value)
+      -- OP_MOVE [A, B]    R(A) := R(B)
+      addInstruction("MOVE", expressionRegister, variableRegister)
+    elseif variableType == "Upvalue" then
+      -- OP_GETUPVAL [A, B]    R(A) := UpValue[B]
+      addInstruction("GETUPVAL", expressionRegister, findOrCreateUpvalue(node.Value))
+    end
+    return expressionRegister
+  end
+  local function compileBinaryOperatorNode(node, expressionRegister)
+    local nodeOperator = node.Operator
+    local opcode = COMPILER_SIMPLE_ARICHMETIC_OPERATOR_LOOKUP[nodeOperator]
+                   or COMPILER_COMPARISON_OPERATOR_LOOKUP[nodeOperator]
+                   or COMPILER_CONTROL_FLOW_OPERATOR_LOOKUP[nodeOperator]
+    if COMPILER_SIMPLE_ARICHMETIC_OPERATOR_LOOKUP[nodeOperator] then
+      local leftExpressionRegister = processExpressionNode(node.Left)
+      local rightExpressionRegister = processExpressionNode(node.Right)
+      addInstruction(opcode, expressionRegister, leftExpressionRegister, rightExpressionRegister)
+      deallocateRegisters({ leftExpressionRegister, rightExpressionRegister })
+    elseif COMPILER_CONTROL_FLOW_OPERATOR_LOOKUP[nodeOperator] then
+      local leftExpressionRegister = processExpressionNode(node.Left, expressionRegister)
+      local isConditionTrue = (nodeOperator == "and" and 0) or 1
+      -- OP_TEST [A, C]    if not (R(A) <=> C) then pc++
+      addInstruction("TEST", leftExpressionRegister, 0, isConditionTrue)
+      -- OP_JMP [A, sBx]    pc+=sBx
+      local jumpInstruction, jumpInstructionIndex = addInstruction("JMP", 0, 0) -- Placeholder
+      processExpressionNode(node.Right, expressionRegister)
+      updateJumpInstruction(jumpInstructionIndex)
+    elseif COMPILER_COMPARISON_OPERATOR_LOOKUP[nodeOperator] then
+      local leftExpressionRegister = processExpressionNode(node.Left)
+      local rightExpressionRegister = processExpressionNode(node.Right)
+      local instruction, flag = unpack(COMPILER_COMPARISON_INSTRUCTION_LOOKUP[nodeOperator])
+      if nodeOperator == ">" or nodeOperator == ">=" then
+        leftExpressionRegister, rightExpressionRegister = rightExpressionRegister, leftExpressionRegister
+      end
+      addInstruction(instruction, flag, leftExpressionRegister, rightExpressionRegister)
+      -- OP_JMP [A, sBx]    pc+=sBx
+      addInstruction("JMP", 0, 1)
+      -- OP_LOADBOOL [A, B, C]    R(A) := (Bool)B if (C) pc++
+      addInstruction("LOADBOOL", expressionRegister, 0, 1)
+      addInstruction("LOADBOOL", expressionRegister, 1, 0)
+      deallocateRegisters({ leftExpressionRegister, rightExpressionRegister })
+    elseif nodeOperator == ".." then
+      local leftExpressionRegister = processExpressionNode(node.Left)
+      local rightExpressionRegister = processExpressionNode(node.Right)
+      if (rightExpressionRegister - leftExpressionRegister) ~= 1 then
+        error("Concatenation requires consecutive registers")
+      end
+      -- OP_CONCAT [A, B, C]    R(A) := R(B).. ... ..R(C)
+      addInstruction("CONCAT", expressionRegister, leftExpressionRegister, rightExpressionRegister)
+      deallocateRegisters({ leftExpressionRegister, rightExpressionRegister })
+    end
+    return expressionRegister
+  end
+  local function compileUnaryOperatorNode(node, expressionRegister)
+    local nodeOperator = node.Operator
+    local operatorOpcode = COMPILER_UNARY_OPERATOR_LOOKUP[nodeOperator]
+    local operandExpression = processExpressionNode(node.Operand)
+    addInstruction(operatorOpcode, expressionRegister, operandExpression)
+    deallocateRegister(operandExpression)
+    return expressionRegister
+  end
+
+  --// CODE GENERATION //--
   function processExpressionNode(node, expressionRegister)
     local expressionRegister = expressionRegister or allocateRegister()
     local nodeType = node.TYPE
@@ -1427,185 +1635,18 @@ function InstructionGenerator.generate(ast)
       nodeType = node.TYPE
     end
 
-    if nodeType == "Number" or nodeType == "String" then
-      -- OP_LOADK [A, Bx]    R(A) := Kst(Bx)
-      addInstruction("LOADK", expressionRegister, findOrCreateConstant(node.Value))
-    elseif nodeType == "Function" then
-      local codeblock  = node.Codeblock
-      local parameters = node.Parameters
-      local isVarArg   = node.isVarArg
-      processFunction(codeblock, expressionRegister, parameters, isVarArg)
-    elseif nodeType == "FunctionCall" then
-      processExpressionNode(node.Expression, expressionRegister)
-      local argumentRegisters = {}
-      for index, argument in ipairs(node.Arguments) do
-        local currentArgumentRegisters = { processExpressionNode(argument) }
-        for _, register in ipairs(currentArgumentRegisters) do
-          table.insert(argumentRegisters, register)
-        end
-      end
-      local returnAmount = node.ReturnValueAmount + 1
-      local argumentAmount = #node.Arguments + 1
-      if returnAmount <= 0 then returnAmount = 0 end
-      if node.Arguments[#node.Arguments] then
-        local lastArgument = node.Arguments[#node.Arguments]
-        if isMultiretNode(lastArgument) then
-          argumentAmount = 0
-        end
-      end
-      -- OP_CALL [A, B, C]    R(A), ... ,R(A+C-2) := R(A)(R(A+1), ... ,R(A+B-1))
-      addInstruction("CALL", expressionRegister, argumentAmount, returnAmount)
-      deallocateRegisters(argumentRegisters)
-      local returnRegisters = { expressionRegister }
-      for index = expressionRegister + 1, expressionRegister + node.ReturnValueAmount - 1 do
-        table.insert(returnRegisters, allocateRegister())
-      end
-      return unpack(returnRegisters)
-    elseif nodeType == "MethodCall" then
-      local nodeIndexIndex      = node.Expression.Index
-      local nodeIndexExpression = node.Expression.Expression
-      processExpressionNode(nodeIndexExpression, expressionRegister)
-      local selfArgumentRegister = allocateRegister()
-      local nodeIndexRegister = processExpressionNode(nodeIndexIndex)
-      -- OP_SELF [A, B, C]    R(A+1) := R(B) R(A) := R(B)[RK(C)]
-      addInstruction("SELF", expressionRegister, expressionRegister, nodeIndexRegister)
-      deallocateRegister(nodeIndexRegister)
-      local argumentRegisters = { selfArgumentRegister } -- Allocate the self register
-      for index, argument in ipairs(node.Arguments) do
-        local currentArgumentRegisters = { processExpressionNode(argument) }
-        for _, register in ipairs(currentArgumentRegisters) do
-          table.insert(argumentRegisters, register)
-        end
-      end
-      local returnAmount = node.ReturnValueAmount + 1
-      local argumentAmount = #node.Arguments + 2
-      if returnAmount <= 0 then returnAmount = 0 end
-      -- OP_CALL [A, B, C]    R(A), ... ,R(A+C-2) := R(A)(R(A+1), ... ,R(A+B-1))
-      addInstruction("CALL", expressionRegister, argumentAmount, returnAmount)
-      deallocateRegisters(argumentRegisters)
-      local returnRegisters = { expressionRegister }
-      for index = expressionRegister + 1, expressionRegister + node.ReturnValueAmount - 1 do
-        table.insert(returnRegisters, allocateRegister())
-      end
-      return unpack(returnRegisters)
-    elseif nodeType == "Constant" then
-      local nodeValue = node.Value
-      if nodeValue ~= "nil" then
-        local secondValue = (nodeValue == "true" and 1) or 0
-        -- OP_LOADBOOL [A, B, C]    R(A) := (Bool)B if (C) pc++
-        addInstruction("LOADBOOL", expressionRegister, secondValue, 0)
-      else
-        -- OP_LOADNIL [A, B]    R(A) := ... := R(B) := nil
-        addInstruction("LOADNIL", expressionRegister, expressionRegister)
-      end
-    elseif nodeType == "VarArg" then
-      local returnAmount = node.ReturnValueAmount + 1
-      if returnAmount <= 0 then returnAmount = 0 end
-      -- OP_VARARG [A, B]    R(A), R(A+1), ..., R(A+B-1) = vararg
-      addInstruction("VARARG", expressionRegister, returnAmount)
-      local returnRegisters = { expressionRegister }
-      for index = expressionRegister + 1, expressionRegister + node.ReturnValueAmount - 1 do
-        table.insert(returnRegisters, allocateRegister())
-      end
-      return unpack(returnRegisters)
-    elseif nodeType == "TableIndex" then
-      processExpressionNode(node.Expression, expressionRegister)
-      local indexRegister = processExpressionNode(node.Index)
-      -- OP_GETTABLE [A, B, C]    R(A) := R(B)[RK(C)]
-      addInstruction("GETTABLE", expressionRegister, expressionRegister, indexRegister)
-      deallocateRegister(indexRegister)
-    elseif nodeType == "Table" then
-      local elements         = node.Elements
-      local implicitElements = node.ImplicitElements
-      local explicitElements = node.ExplicitElements
-      local sizeB = math.min(#implicitElements, 255)
-      local sizeC = math.min(#explicitElements, 255)
-      -- OP_NEWTABLE [A, B, C]    R(A) := {} (size = B,C)
-      addInstruction("NEWTABLE", expressionRegister, sizeB, sizeC)
-      for _, element in ipairs(explicitElements) do
-        local valueRegister = processExpressionNode(element.Value)
-        local keyRegister = processExpressionNode(element.Key)
-        deallocateRegisters({ valueRegister, keyRegister })
-        -- OP_SETTABLE [A, B, C]    R(A)[RK(B)] := RK(C)
-        addInstruction("SETTABLE", expressionRegister, keyRegister, valueRegister)
-      end
-      local implicitKeyValues = {}
-      for _, element in ipairs(implicitElements) do
-        local valueRegister = processExpressionNode(element.Value)
-        table.insert(implicitKeyValues, valueRegister)
-      end
-      if #implicitKeyValues > 0 then
-        local implicitKeyAmount = #implicitKeyValues
-        local lastImplicitValue = implicitElements[#implicitElements].Value.Value
-        if isMultiretNode(lastImplicitValue) then
-          implicitKeyAmount = 0
-        end
-        -- OP_SETLIST [A, B, C]    R(A)[(C-1)*FPF+i] := R(A+i), 1 <= i <= B
-        addInstruction("SETLIST", expressionRegister, implicitKeyAmount, 1)
-        deallocateRegisters(implicitKeyValues)
-      end
-    elseif nodeType == "Variable" then
-      local variableType = node.VariableType
-      if variableType == "Global" then
-        -- OP_GETGLOBAL [A, Bx]    R(A) := Gbl[Kst(Bx)]
-        addInstruction("GETGLOBAL", expressionRegister, findOrCreateConstant(node.Value))
-      elseif variableType == "Local" then
-        local variableRegister = findVariableRegister(node.Value)
-        -- OP_MOVE [A, B]    R(A) := R(B)
-        addInstruction("MOVE", expressionRegister, variableRegister)
-      elseif variableType == "Upvalue" then
-        -- OP_GETUPVAL [A, B]    R(A) := UpValue[B]
-        addInstruction("GETUPVAL", expressionRegister, findOrCreateUpvalue(node.Value))
-      end
-    elseif nodeType == "BinaryOperator" then
-      local nodeOperator = node.Operator
-      local opcode = COMPILER_SIMPLE_ARICHMETIC_OPERATOR_LOOKUP[nodeOperator]
-                     or COMPILER_COMPARISON_OPERATOR_LOOKUP[nodeOperator]
-                     or COMPILER_CONTROL_FLOW_OPERATOR_LOOKUP[nodeOperator]
-      if COMPILER_SIMPLE_ARICHMETIC_OPERATOR_LOOKUP[nodeOperator] then
-        local leftExpressionRegister = processExpressionNode(node.Left)
-        local rightExpressionRegister = processExpressionNode(node.Right)
-        addInstruction(opcode, expressionRegister, leftExpressionRegister, rightExpressionRegister)
-        deallocateRegisters({ leftExpressionRegister, rightExpressionRegister })
-      elseif COMPILER_CONTROL_FLOW_OPERATOR_LOOKUP[nodeOperator] then
-        local leftExpressionRegister = processExpressionNode(node.Left, expressionRegister)
-        local isConditionTrue = (nodeOperator == "and" and 0) or 1
-        -- OP_TEST [A, C]    if not (R(A) <=> C) then pc++
-        addInstruction("TEST", leftExpressionRegister, 0, isConditionTrue)
-        -- OP_JMP [A, sBx]    pc+=sBx
-        local jumpInstruction, jumpInstructionIndex = addInstruction("JMP", 0, 0) -- Placeholder
-        processExpressionNode(node.Right, expressionRegister)
-        updateJumpInstruction(jumpInstructionIndex)
-      elseif COMPILER_COMPARISON_OPERATOR_LOOKUP[nodeOperator] then
-        local leftExpressionRegister = processExpressionNode(node.Left)
-        local rightExpressionRegister = processExpressionNode(node.Right)
-        local instruction, flag = unpack(COMPILER_COMPARISON_INSTRUCTION_LOOKUP[nodeOperator])
-        if nodeOperator == ">" or nodeOperator == ">=" then
-          leftExpressionRegister, rightExpressionRegister = rightExpressionRegister, leftExpressionRegister
-        end
-        addInstruction(instruction, flag, leftExpressionRegister, rightExpressionRegister)
-        -- OP_JMP [A, sBx]    pc+=sBx
-        addInstruction("JMP", 0, 1)
-        -- OP_LOADBOOL [A, B, C]    R(A) := (Bool)B if (C) pc++
-        addInstruction("LOADBOOL", expressionRegister, 0, 1)
-        addInstruction("LOADBOOL", expressionRegister, 1, 0)
-        deallocateRegisters({ leftExpressionRegister, rightExpressionRegister })
-      elseif nodeOperator == ".." then
-        local leftExpressionRegister = processExpressionNode(node.Left)
-        local rightExpressionRegister = processExpressionNode(node.Right)
-        if (rightExpressionRegister - leftExpressionRegister) ~= 1 then
-          error("Concatenation requires consecutive registers")
-        end
-        -- OP_CONCAT [A, B, C]    R(A) := R(B).. ... ..R(C)
-        addInstruction("CONCAT", expressionRegister, leftExpressionRegister, rightExpressionRegister)
-        deallocateRegisters({ leftExpressionRegister, rightExpressionRegister })
-      end
-    elseif nodeType == "UnaryOperator" then
-      local nodeOperator = node.Operator
-      local operatorOpcode = COMPILER_UNARY_OPERATOR_LOOKUP[nodeOperator]
-      local operandExpression = processExpressionNode(node.Operand)
-      addInstruction(operatorOpcode, expressionRegister, operandExpression)
-      deallocateRegister(operandExpression)
+    if     nodeType == "Number"         then return compileNumberNode(node, expressionRegister)
+    elseif nodeType == "String"         then return compileStringNode(node, expressionRegister)
+    elseif nodeType == "Function"       then return compileFunctionNode(node, expressionRegister)
+    elseif nodeType == "FunctionCall"   then return compileFunctionCallNode(node, expressionRegister)
+    elseif nodeType == "MethodCall"     then return compileMethodCallNode(node, expressionRegister)
+    elseif nodeType == "Constant"       then return compileConstantNode(node, expressionRegister)
+    elseif nodeType == "VarArg"         then return compileVarArgNode(node, expressionRegister)
+    elseif nodeType == "TableIndex"     then return compileTableIndexNode(node, expressionRegister)
+    elseif nodeType == "Table"          then return compileTableNode(node, expressionRegister)
+    elseif nodeType == "Variable"       then return compileVariableNode(node, expressionRegister)
+    elseif nodeType == "BinaryOperator" then return compileBinaryOperatorNode(node, expressionRegister)
+    elseif nodeType == "UnaryOperator"  then return compileUnaryOperatorNode(node, expressionRegister)
     else
       error("Unsupported expression node type: " .. tostring(nodeType))
     end
