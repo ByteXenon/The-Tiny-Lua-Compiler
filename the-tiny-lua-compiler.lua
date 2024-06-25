@@ -1574,10 +1574,8 @@ function InstructionGenerator.generate(ast)
   end
   local function compileBinaryOperatorNode(node, expressionRegister)
     local nodeOperator = node.Operator
-    local opcode = COMPILER_SIMPLE_ARICHMETIC_OPERATOR_LOOKUP[nodeOperator]
-                   or COMPILER_COMPARISON_OPERATOR_LOOKUP[nodeOperator]
-                   or COMPILER_CONTROL_FLOW_OPERATOR_LOOKUP[nodeOperator]
     if COMPILER_SIMPLE_ARICHMETIC_OPERATOR_LOOKUP[nodeOperator] then
+      local opcode = COMPILER_SIMPLE_ARICHMETIC_OPERATOR_LOOKUP[nodeOperator]
       local leftExpressionRegister = processExpressionNode(node.Left)
       local rightExpressionRegister = processExpressionNode(node.Right)
       addInstruction(opcode, expressionRegister, leftExpressionRegister, rightExpressionRegister)
