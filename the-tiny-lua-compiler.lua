@@ -1626,6 +1626,270 @@ function InstructionGenerator.generate(ast)
     return expressionRegister
   end
 
+  --// STATEMENT COMPILERS //--
+  local function compileBreakStatementNode(node)
+    -- OP_JMP [A, sBx]    pc+=sBx
+    local jumpInstruction, jumpInstructionIndex = addInstruction("JMP", 0, 0) -- Placeholder
+    table.insert(breakInstructions, jumpInstructionIndex)
+  end
+  local function compileLocalFunctionDeclarationNode(node)
+    local name          = node.Name
+    local codeblock     = node.Codeblock
+    local parameters    = node.Parameters
+    local isVarArg      = node.IsVarArg
+    local localRegister = allocateRegister()
+    registerVariable(name, localRegister)
+    processFunction(codeblock, localRegister, parameters, isVarArg)
+  end
+  local function compileFunctionDeclarationNode(node)
+    local expression         = node.Expression
+    local fields             = node.Fields
+    local isMethod           = node.IsMethod
+    local codeblock          = node.Codeblock
+    local parameters         = node.Parameters
+    local isVarArg           = node.IsVarArg
+    if #fields > 0 then
+      local closureRegister = allocateRegister()
+      processFunction(codeblock, closureRegister, parameters, isVarArg)
+      local expressionRegister = processExpressionNode(expression)
+      for index, field in ipairs(fields) do
+        local fieldRegister = allocateRegister()
+        -- OP_LOADK [A, Bx]    R(A) := Kst(Bx)
+        addInstruction("LOADK", fieldRegister, findOrCreateConstant(field))
+        if index == #fields then
+          -- OP_SETTABLE [A, B, C]    R(A)[RK(B)] := RK(C)
+          addInstruction("SETTABLE", expressionRegister, fieldRegister, closureRegister)
+        else
+          -- OP_GETTABLE [A, B, C]    R(A) := R(B)[RK(C)]
+          addInstruction("GETTABLE", expressionRegister, expressionRegister, fieldRegister)
+        end
+        deallocateRegister(fieldRegister)
+      end
+      deallocateRegisters({ expressionRegister, closureRegister })
+      return
+    end
+    if expression.VariableType == "Local" then
+      local localRegister = findVariableRegister(expression.Value)
+      processFunction(codeblock, localRegister, parameters, isVarArg)
+    elseif expression.VariableType == "Upvalue" then
+      local upvalueIndex = findOrCreateUpvalue(expression.Value)
+      local closureRegister = allocateRegister()
+      processFunction(codeblock, closureRegister, parameters, isVarArg)
+      -- OP_SETUPVAL [A, B]    UpValue[B] := R(A)
+      addInstruction("SETUPVAL", closureRegister, findOrCreateUpvalue(expression.Value))
+      deallocateRegister(closureRegister)
+    elseif expression.VariableType == "Global" then
+      local globalRegister = allocateRegister()
+      processFunction(codeblock, globalRegister, parameters, isVarArg)
+      -- OP_SETGLOBAL [A, Bx]    Gbl[Kst(Bx)] := R(A)
+      addInstruction("SETGLOBAL", globalRegister, findOrCreateConstant(expression.Value))
+      deallocateRegister(globalRegister)
+    end
+  end
+  local function compileLocalDeclarationNode(node)
+    local variableExpressionRegisters = {}
+    for index, expression in ipairs(node.Expressions) do
+      local expressionRegisters = { processExpressionNode(expression) }
+      for index2, expressionRegister in ipairs(expressionRegisters) do
+        table.insert(variableExpressionRegisters, expressionRegister)
+        if not node.Variables[index + index2 - 1] then
+          -- If this expression doesn't have a corresponding variable, deallocate it
+          deallocateRegister(expressionRegister)
+        end
+      end
+    end
+    for index, localName in ipairs(node.Variables) do
+      local expressionRegister = variableExpressionRegisters[index]
+      if not expressionRegister then
+        expressionRegister = allocateRegister()
+        -- Load nil into the register
+        -- OP_LOADNIL [A, B]    R(A) := ... := R(B) := nil
+        addInstruction("LOADNIL", expressionRegister, expressionRegister)
+      end
+      registerVariable(localName, expressionRegister)
+    end
+  end
+  local function compileNumericForLoopNode(node)
+    local variableName = node.VariableName
+    local expressions = node.Expressions
+    local codeblock = node.Codeblock
+    local startRegister = processExpressionNode(expressions[1])
+    local endRegister = processExpressionNode(expressions[2])
+    local stepRegister = allocateRegister()
+    if expressions[3] then
+      stepRegister = processExpressionNode(expressions[3], stepRegister)
+    else
+      -- OP_LOADK [A, Bx]    R(A) := Kst(Bx)
+      addInstruction("LOADK", stepRegister, findOrCreateConstant(1))
+    end
+    -- OP_FORPREP [A, sBx]    R(A)-=R(A+2) pc+=sBx
+    local forprepInstruction, forprepInstructionIndex = addInstruction("FORPREP", startRegister, 0)
+    local loopStart = #code
+    registerVariable(variableName, startRegister)
+    local oldBreakInstructions = breakInstructions
+    breakInstructions = {}
+    processCodeBlock(codeblock)
+    local loopEnd = #code
+    updateJumpInstruction(forprepInstructionIndex)
+    -- OP_FORLOOP [,A sBx]   R(A)+=R(A+2)
+    --                       if R(A) <?= R(A+1) then { pc+=sBx R(A+3)=R(A) }
+    addInstruction("FORLOOP", startRegister, loopStart - loopEnd - 1)
+    updateJumpInstructions(breakInstructions)
+    breakInstructions = oldBreakInstructions
+    unregisterVariable(variableName)
+    deallocateRegisters({ startRegister, endRegister, stepRegister })
+  end
+  local function compileGenericForLoopNode(node)
+    local iteratorVariables = node.IteratorVariables
+    local expressions = node.Expressions
+    local codeblock = node.Codeblock
+    local iteratorRegisters = {}
+    local expressionRegisters = { processExpressionNode(expressions[1]) }
+    -- OP_JMP [A, sBx]    pc+=sBx
+    local startJmpInstruction, startJmpInstructionIndex = addInstruction("JMP", 0, 0) -- Placeholder
+    local forGeneratorRegister = expressionRegisters[1]
+    local forStateRegister = expressionRegisters[2]
+    local forControlRegister = expressionRegisters[3]
+    if not (forGeneratorRegister and forStateRegister and forControlRegister) then
+      error("Expected 3 expression registers")
+    end
+    local loopStart = #code
+    for index, iteratorVariable in ipairs(iteratorVariables) do
+      local iteratorRegister = allocateRegister()
+      iteratorRegisters[index] = iteratorRegister
+      registerVariable(iteratorVariable, iteratorRegister)
+    end
+    local oldBreakInstructions = breakInstructions
+    breakInstructions = {}
+    processCodeBlock(codeblock)
+    updateJumpInstruction(startJmpInstructionIndex)
+    -- OP_TFORLOOP [A, C]    R(A+3), ... ,R(A+2+C) := R(A)(R(A+1), R(A+2))
+    --                       if R(A+3) ~= nil then R(A+2)=R(A+3) else pc++
+    local tforloopInstruction = addInstruction("TFORLOOP", forGeneratorRegister, 0, #iteratorVariables)
+    -- OP_JMP [A, sBx]    pc+=sBx
+    addInstruction("JMP", 0, loopStart - #code - 1)
+    updateJumpInstructions(breakInstructions)
+    breakInstructions = oldBreakInstructions
+    deallocateRegisters(expressionRegisters)
+    unregisterVariables(iteratorVariables)
+  end
+  local function compileReturnStatementNode(node)
+    local expressionRegisters = {}
+    for index, expression in ipairs(node.Expressions) do
+      local currentExpressionRegisters = { processExpressionNode(expression) }
+      for _, register in ipairs(currentExpressionRegisters) do
+        table.insert(expressionRegisters, register)
+      end
+    end
+    local startRegister = expressionRegisters[1] or 0
+    local returnAmount = #node.Expressions + 1
+    local lastExpression = node.Expressions[#node.Expressions]
+    if isMultiretNode(lastExpression) then
+      returnAmount = 0
+    end
+    -- OP_RETURN [A, B]    return R(A), ... ,R(A+B-2)
+    addInstruction("RETURN", startRegister, returnAmount, 0)
+    deallocateRegisters(expressionRegisters)
+  end
+  local function compileWhileLoopNode(node)
+    local loopStart = #code
+    local conditionRegister = processExpressionNode(node.Condition)
+    -- OP_TEST [A, C]    if not (R(A) <=> C) then pc++
+    addInstruction("TEST", conditionRegister, 0, 0)
+    -- OP_JMP [A, sBx]    pc+=sBx
+    local jumpInstruction, jumpInstructionIndex = addInstruction("JMP", 0, 0)
+    deallocateRegister(conditionRegister)
+    local codeStart = #code
+    local oldBreakInstructions = breakInstructions
+    breakInstructions = {}
+    processCodeBlock(node.Codeblock)
+    -- OP_JMP [A, sBx]    pc+=sBx
+    addInstruction("JMP", 0, loopStart - #code - 1)
+    updateJumpInstruction(jumpInstructionIndex)
+    updateJumpInstructions(breakInstructions)
+    breakInstructions = oldBreakInstructions
+  end
+  local function compileRepeatLoopNode(node)
+    local loopStart = #code
+    processCodeBlock(node.Codeblock)
+    local conditionRegister = processExpressionNode(node.Condition)
+    -- OP_TEST [A, C]    if not (R(A) <=> C) then pc++
+    addInstruction("TEST", conditionRegister, 0, 0)
+    -- OP_JMP [A, sBx]    pc+=sBx
+    addInstruction("JMP", 0, loopStart - #code - 1)
+    deallocateRegister(conditionRegister)
+  end
+  local function compileDoBlockNode(node)
+    processCodeBlock(node.Codeblock)
+  end
+  local function compileIfStatementNode(node)
+    local branches      = node.Branches
+    local elseCodeBlock = node.ElseCodeBlock
+    local jumpToEndInstructions = {}
+    for index, branch in ipairs(branches) do
+      local condition = branch.Condition
+      local codeBlock = branch.CodeBlock
+      local conditionRegister = processExpressionNode(condition)
+      -- OP_TEST [A, C]    if not (R(A) <=> C) then pc++
+      addInstruction("TEST", conditionRegister, 0, 0)
+      -- OP_JMP [A, sBx]    pc+=sBx
+      local conditionJumpInstruction, conditionJumpInstructionIndex = addInstruction("JMP", 0, 0) -- Placeholder
+      deallocateRegister(conditionRegister)
+      processCodeBlock(codeBlock)
+      if index < #branches or elseCodeBlock then
+        -- OP_JMP [A, sBx]    pc+=sBx
+        local instruction, jumpInstructionIndex = addInstruction("JMP", 0, 0)
+        table.insert(jumpToEndInstructions, jumpInstructionIndex)
+      end
+      updateJumpInstruction(conditionJumpInstructionIndex)
+    end
+    if elseCodeBlock then
+      processCodeBlock(elseCodeBlock)
+    end
+
+    updateJumpInstructions(jumpToEndInstructions)
+  end
+  local function compileVariableAssignmentNode(node)
+    local expressionRegisters = {}
+    for index, expression in ipairs(node.Expressions) do
+      local currentExpressionRegisters = { processExpressionNode(expression) }
+      for _, register in ipairs(currentExpressionRegisters) do
+        table.insert(expressionRegisters, register)
+      end
+    end
+    for index, lvalue in ipairs(node.LValues) do
+      local lvalueType = lvalue.TYPE
+      if lvalueType == "Variable" then
+        local variableType = lvalue.VariableType
+        local variableName = lvalue.Value
+        local expressionRegister = expressionRegisters[index]
+        if not expressionRegister then error("Expected an expression for assignment") end
+        if variableType == "Local" then
+          local variableRegister = findVariableRegister(variableName)
+          -- OP_MOVE [A, B]    R(A) := R(B)
+          addInstruction("MOVE", variableRegister, expressionRegister)
+        elseif variableType == "Global" then
+          -- OP_SETGLOBAL [A, Bx]    Gbl[Kst(Bx)] := R(A)
+          addInstruction("SETGLOBAL", expressionRegister, findOrCreateConstant(variableName))
+        elseif variableType == "Upvalue" then
+          -- OP_SETUPVAL [A, B]    UpValue[B] := R(A)
+          addInstruction("SETUPVAL", expressionRegister, findOrCreateUpvalue(variableName))
+        end
+      elseif lvalueType == "TableIndex" then
+        local indexRegister = processExpressionNode(lvalue.Index)
+        local tableExpressionRegister = processExpressionNode(lvalue.Expression)
+        local expressionRegister = expressionRegisters[index]
+        if not expressionRegister then error("Expected an expression for assignment") end
+        -- OP_SETTABLE [A, B, C]    R(A)[RK(B)] := RK(C)
+        addInstruction("SETTABLE", tableExpressionRegister, indexRegister, expressionRegister)
+        deallocateRegisters({ indexRegister, expressionRegister, tableExpressionRegister })
+      else
+        error("Unsupported lvalue type: " .. lvalueType)
+      end
+    end
+    deallocateRegisters(expressionRegisters)
+  end
+
   --// CODE GENERATION //--
   function processExpressionNode(node, expressionRegister)
     local expressionRegister = expressionRegister or allocateRegister()
@@ -1658,256 +1922,18 @@ function InstructionGenerator.generate(ast)
     if nodeType == "FunctionCall" or nodeType == "MethodCall" then
       local functionRegisters = { processExpressionNode(node) }
       deallocateRegisters(functionRegisters)
-    elseif nodeType == "BreakStatement" then
-      -- OP_JMP [A, sBx]    pc+=sBx
-      local jumpInstruction, jumpInstructionIndex = addInstruction("JMP", 0, 0) -- Placeholder
-      table.insert(breakInstructions, jumpInstructionIndex)
-    elseif nodeType == "LocalFunctionDeclaration" then
-      local name          = node.Name
-      local codeblock     = node.Codeblock
-      local parameters    = node.Parameters
-      local isVarArg      = node.IsVarArg
-      local localRegister = allocateRegister()
-      registerVariable(name, localRegister)
-      processFunction(codeblock, localRegister, parameters, isVarArg)
-    elseif nodeType == "FunctionDeclaration" then
-      local expression         = node.Expression
-      local fields             = node.Fields
-      local isMethod           = node.IsMethod
-      local codeblock          = node.Codeblock
-      local parameters         = node.Parameters
-      local isVarArg           = node.IsVarArg
-      if #fields > 0 then
-        local closureRegister = allocateRegister()
-        processFunction(codeblock, closureRegister, parameters, isVarArg)
-        local expressionRegister = processExpressionNode(expression)
-        for index, field in ipairs(fields) do
-          local fieldRegister = allocateRegister()
-          -- OP_LOADK [A, Bx]    R(A) := Kst(Bx)
-          addInstruction("LOADK", fieldRegister, findOrCreateConstant(field))
-          if index == #fields then
-            -- OP_SETTABLE [A, B, C]    R(A)[RK(B)] := RK(C)
-            addInstruction("SETTABLE", expressionRegister, fieldRegister, closureRegister)
-          else
-            -- OP_GETTABLE [A, B, C]    R(A) := R(B)[RK(C)]
-            addInstruction("GETTABLE", expressionRegister, expressionRegister, fieldRegister)
-          end
-          deallocateRegister(fieldRegister)
-        end
-        deallocateRegisters({ expressionRegister, closureRegister })
-        return
-      end
-      if expression.VariableType == "Local" then
-        local localRegister = findVariableRegister(expression.Value)
-        processFunction(codeblock, localRegister, parameters, isVarArg)
-      elseif expression.VariableType == "Upvalue" then
-        local upvalueIndex = findOrCreateUpvalue(expression.Value)
-        local closureRegister = allocateRegister()
-        processFunction(codeblock, closureRegister, parameters, isVarArg)
-        -- OP_SETUPVAL [A, B]    UpValue[B] := R(A)
-        addInstruction("SETUPVAL", closureRegister, findOrCreateUpvalue(expression.Value))
-        deallocateRegister(closureRegister)
-      elseif expression.VariableType == "Global" then
-        local globalRegister = allocateRegister()
-        processFunction(codeblock, globalRegister, parameters, isVarArg)
-        -- OP_SETGLOBAL [A, Bx]    Gbl[Kst(Bx)] := R(A)
-        addInstruction("SETGLOBAL", globalRegister, findOrCreateConstant(expression.Value))
-        deallocateRegister(globalRegister)
-      end
-    elseif nodeType == "LocalDeclaration" then
-      local variableExpressionRegisters = {}
-      for index, expression in ipairs(node.Expressions) do
-        local expressionRegisters = { processExpressionNode(expression) }
-        for index2, expressionRegister in ipairs(expressionRegisters) do
-          table.insert(variableExpressionRegisters, expressionRegister)
-          if not node.Variables[index + index2 - 1] then
-            -- If this expression doesn't have a corresponding variable, deallocate it
-            deallocateRegister(expressionRegister)
-          end
-        end
-      end
-      for index, localName in ipairs(node.Variables) do
-        local expressionRegister = variableExpressionRegisters[index]
-        if not expressionRegister then
-          expressionRegister = allocateRegister()
-          -- Load nil into the register
-          -- OP_LOADNIL [A, B]    R(A) := ... := R(B) := nil
-          addInstruction("LOADNIL", expressionRegister, expressionRegister)
-        end
-        registerVariable(localName, expressionRegister)
-      end
-    elseif nodeType == "NumericForLoop" then
-      local variableName = node.VariableName
-      local expressions = node.Expressions
-      local codeblock = node.Codeblock
-      local startRegister = processExpressionNode(expressions[1])
-      local endRegister = processExpressionNode(expressions[2])
-      local stepRegister = allocateRegister()
-      if expressions[3] then
-        stepRegister = processExpressionNode(expressions[3], stepRegister)
-      else
-        -- OP_LOADK [A, Bx]    R(A) := Kst(Bx)
-        addInstruction("LOADK", stepRegister, findOrCreateConstant(1))
-      end
-      -- OP_FORPREP [A, sBx]    R(A)-=R(A+2) pc+=sBx
-      local forprepInstruction, forprepInstructionIndex = addInstruction("FORPREP", startRegister, 0)
-      local loopStart = #code
-      registerVariable(variableName, startRegister)
-      local oldBreakInstructions = breakInstructions
-      breakInstructions = {}
-      processCodeBlock(codeblock)
-      local loopEnd = #code
-      updateJumpInstruction(forprepInstructionIndex)
-      -- OP_FORLOOP [,A sBx]   R(A)+=R(A+2)
-      --                       if R(A) <?= R(A+1) then { pc+=sBx R(A+3)=R(A) }
-      addInstruction("FORLOOP", startRegister, loopStart - loopEnd - 1)
-      updateJumpInstructions(breakInstructions)
-      breakInstructions = oldBreakInstructions
-      unregisterVariable(variableName)
-      deallocateRegisters({ startRegister, endRegister, stepRegister })
-    elseif nodeType == "GenericForLoop" then
-      local iteratorVariables = node.IteratorVariables
-      local expressions = node.Expressions
-      local codeblock = node.Codeblock
-      local iteratorRegisters = {}
-      local expressionRegisters = { processExpressionNode(expressions[1]) }
-      -- OP_JMP [A, sBx]    pc+=sBx
-      local startJmpInstruction, startJmpInstructionIndex = addInstruction("JMP", 0, 0) -- Placeholder
-      local forGeneratorRegister = expressionRegisters[1]
-      local forStateRegister = expressionRegisters[2]
-      local forControlRegister = expressionRegisters[3]
-      if not (forGeneratorRegister and forStateRegister and forControlRegister) then
-        error("Expected 3 expression registers")
-      end
-      local loopStart = #code
-      for index, iteratorVariable in ipairs(iteratorVariables) do
-        local iteratorRegister = allocateRegister()
-        iteratorRegisters[index] = iteratorRegister
-        registerVariable(iteratorVariable, iteratorRegister)
-      end
-      local oldBreakInstructions = breakInstructions
-      breakInstructions = {}
-      processCodeBlock(codeblock)
-      updateJumpInstruction(startJmpInstructionIndex)
-      -- OP_TFORLOOP [A, C]    R(A+3), ... ,R(A+2+C) := R(A)(R(A+1), R(A+2))
-      --                       if R(A+3) ~= nil then R(A+2)=R(A+3) else pc++
-      local tforloopInstruction = addInstruction("TFORLOOP", forGeneratorRegister, 0, #iteratorVariables)
-      -- OP_JMP [A, sBx]    pc+=sBx
-      addInstruction("JMP", 0, loopStart - #code - 1)
-      updateJumpInstructions(breakInstructions)
-      breakInstructions = oldBreakInstructions
-      deallocateRegisters(expressionRegisters)
-      unregisterVariables(iteratorVariables)
-    elseif nodeType == "ReturnStatement" then
-      local expressionRegisters = {}
-      for index, expression in ipairs(node.Expressions) do
-        local currentExpressionRegisters = { processExpressionNode(expression) }
-        for _, register in ipairs(currentExpressionRegisters) do
-          table.insert(expressionRegisters, register)
-        end
-      end
-      local startRegister = expressionRegisters[1] or 0
-      local returnAmount = #node.Expressions + 1
-      local lastExpression = node.Expressions[#node.Expressions]
-      if isMultiretNode(lastExpression) then
-        returnAmount = 0
-      end
-      -- OP_RETURN [A, B]    return R(A), ... ,R(A+B-2)
-      addInstruction("RETURN", startRegister, returnAmount, 0)
-      deallocateRegisters(expressionRegisters)
-    elseif nodeType == "WhileLoop" then
-      local loopStart = #code
-      local conditionRegister = processExpressionNode(node.Condition)
-      -- OP_TEST [A, C]    if not (R(A) <=> C) then pc++
-      addInstruction("TEST", conditionRegister, 0, 0)
-      -- OP_JMP [A, sBx]    pc+=sBx
-      local jumpInstruction, jumpInstructionIndex = addInstruction("JMP", 0, 0)
-      deallocateRegister(conditionRegister)
-      local codeStart = #code
-      local oldBreakInstructions = breakInstructions
-      breakInstructions = {}
-      processCodeBlock(node.Codeblock)
-      -- OP_JMP [A, sBx]    pc+=sBx
-      addInstruction("JMP", 0, loopStart - #code - 1)
-      updateJumpInstruction(jumpInstructionIndex)
-      updateJumpInstructions(breakInstructions)
-      breakInstructions = oldBreakInstructions
-    elseif nodeType == "RepeatLoop" then
-      local loopStart = #code
-      processCodeBlock(node.Codeblock)
-      local conditionRegister = processExpressionNode(node.Condition)
-      -- OP_TEST [A, C]    if not (R(A) <=> C) then pc++
-      addInstruction("TEST", conditionRegister, 0, 0)
-      -- OP_JMP [A, sBx]    pc+=sBx
-      addInstruction("JMP", 0, loopStart - #code - 1)
-      deallocateRegister(conditionRegister)
-    elseif nodeType == "DoBlock" then
-      processCodeBlock(node.Codeblock)
-    elseif nodeType == "IfStatement" then
-      local branches      = node.Branches
-      local elseCodeBlock = node.ElseCodeBlock
-      local jumpToEndInstructions = {}
-      for index, branch in ipairs(branches) do
-        local condition = branch.Condition
-        local codeBlock = branch.CodeBlock
-        local conditionRegister = processExpressionNode(condition)
-        -- OP_TEST [A, C]    if not (R(A) <=> C) then pc++
-        addInstruction("TEST", conditionRegister, 0, 0)
-        -- OP_JMP [A, sBx]    pc+=sBx
-        local conditionJumpInstruction, conditionJumpInstructionIndex = addInstruction("JMP", 0, 0) -- Placeholder
-        deallocateRegister(conditionRegister)
-        processCodeBlock(codeBlock)
-        if index < #branches or elseCodeBlock then
-          -- OP_JMP [A, sBx]    pc+=sBx
-          local instruction, jumpInstructionIndex = addInstruction("JMP", 0, 0)
-          table.insert(jumpToEndInstructions, jumpInstructionIndex)
-        end
-        updateJumpInstruction(conditionJumpInstructionIndex)
-      end
-      if elseCodeBlock then
-        processCodeBlock(elseCodeBlock)
-      end
-
-      updateJumpInstructions(jumpToEndInstructions)
-    elseif nodeType == "VariableAssignment" then
-      local expressionRegisters = {}
-      for index, expression in ipairs(node.Expressions) do
-        local currentExpressionRegisters = { processExpressionNode(expression) }
-        for _, register in ipairs(currentExpressionRegisters) do
-          table.insert(expressionRegisters, register)
-        end
-      end
-      for index, lvalue in ipairs(node.LValues) do
-        local lvalueType = lvalue.TYPE
-        if lvalueType == "Variable" then
-          local variableType = lvalue.VariableType
-          local variableName = lvalue.Value
-          local expressionRegister = expressionRegisters[index]
-          if not expressionRegister then error("Expected an expression for assignment") end
-          if variableType == "Local" then
-            local variableRegister = findVariableRegister(variableName)
-            -- OP_MOVE [A, B]    R(A) := R(B)
-            addInstruction("MOVE", variableRegister, expressionRegister)
-          elseif variableType == "Global" then
-            -- OP_SETGLOBAL [A, Bx]    Gbl[Kst(Bx)] := R(A)
-            addInstruction("SETGLOBAL", expressionRegister, findOrCreateConstant(variableName))
-          elseif variableType == "Upvalue" then
-            -- OP_SETUPVAL [A, B]    UpValue[B] := R(A)
-            addInstruction("SETUPVAL", expressionRegister, findOrCreateUpvalue(variableName))
-          end
-        elseif lvalueType == "TableIndex" then
-          local indexRegister = processExpressionNode(lvalue.Index)
-          local tableExpressionRegister = processExpressionNode(lvalue.Expression)
-          local expressionRegister = expressionRegisters[index]
-          if not expressionRegister then error("Expected an expression for assignment") end
-          -- OP_SETTABLE [A, B, C]    R(A)[RK(B)] := RK(C)
-          addInstruction("SETTABLE", tableExpressionRegister, indexRegister, expressionRegister)
-          deallocateRegisters({ indexRegister, expressionRegister, tableExpressionRegister })
-        else
-          error("Unsupported lvalue type: " .. lvalueType)
-        end
-      end
-      deallocateRegisters(expressionRegisters)
+    elseif nodeType == "BreakStatement"           then return compileBreakStatementNode(node)
+    elseif nodeType == "LocalFunctionDeclaration" then return compileLocalFunctionDeclarationNode(node)
+    elseif nodeType == "FunctionDeclaration"      then return compileFunctionDeclarationNode(node)
+    elseif nodeType == "LocalDeclaration"         then return compileLocalDeclarationNode(node)
+    elseif nodeType == "NumericForLoop"           then return compileNumericForLoopNode(node)
+    elseif nodeType == "GenericForLoop"           then return compileGenericForLoopNode(node)
+    elseif nodeType == "ReturnStatement"          then return compileReturnStatementNode(node)
+    elseif nodeType == "WhileLoop"                then return compileWhileLoopNode(node)
+    elseif nodeType == "RepeatLoop"               then return compileRepeatLoopNode(node)
+    elseif nodeType == "DoBlock"                  then return compileDoBlockNode(node)
+    elseif nodeType == "IfStatement"              then return compileIfStatementNode(node)
+    elseif nodeType == "VariableAssignment"       then return compileVariableAssignmentNode(node)
     else
       error("Unsupported statement node type: " .. tostring(nodeType))
     end
