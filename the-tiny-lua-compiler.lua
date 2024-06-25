@@ -1911,11 +1911,9 @@ function InstructionGenerator.generate(ast)
     elseif nodeType == "Variable"       then return compileVariableNode(node, expressionRegister)
     elseif nodeType == "BinaryOperator" then return compileBinaryOperatorNode(node, expressionRegister)
     elseif nodeType == "UnaryOperator"  then return compileUnaryOperatorNode(node, expressionRegister)
-    else
-      error("Unsupported expression node type: " .. tostring(nodeType))
     end
 
-    return expressionRegister
+    error("Unsupported expression node type: " .. tostring(nodeType))
   end
   function processStatementNode(node)
     local nodeType = node.TYPE
@@ -1934,9 +1932,9 @@ function InstructionGenerator.generate(ast)
     elseif nodeType == "DoBlock"                  then return compileDoBlockNode(node)
     elseif nodeType == "IfStatement"              then return compileIfStatementNode(node)
     elseif nodeType == "VariableAssignment"       then return compileVariableAssignmentNode(node)
-    else
-      error("Unsupported statement node type: " .. tostring(nodeType))
     end
+
+    error("Unsupported statement node type: " .. tostring(nodeType))
   end
   function processCodeBlock(list, isFunctionScope, parameters)
     enterScope(isFunctionScope)
