@@ -1916,9 +1916,7 @@ function InstructionGenerator.generate(ast)
   function processStatementNode(node)
     local nodeType = node.TYPE
     if nodeType == "FunctionCall" or nodeType == "MethodCall" then
-      local functionRegisters = { processExpressionNode(node) }
-      deallocateRegisters(functionRegisters)
-      return
+      return deallocateRegisters({ processExpressionNode(node) })
     elseif nodeType == "BreakStatement"           then return compileBreakStatementNode(node)
     elseif nodeType == "LocalFunctionDeclaration" then return compileLocalFunctionDeclarationNode(node)
     elseif nodeType == "FunctionDeclaration"      then return compileFunctionDeclarationNode(node)
