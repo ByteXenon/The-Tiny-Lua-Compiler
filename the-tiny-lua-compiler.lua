@@ -1416,7 +1416,8 @@ function InstructionGenerator.generate(ast)
     return instruction, #code
   end
 
-  local processExpressionNode, processStatementNode, processCodeBlock, processFunction
+  local processExpressionNode, processStatementNode,
+        processCodeBlock, processFunctionCodeBlock, processFunction
 
   --// EXPRESSION COMPILERS //--
   local function compileNumberNode(node, expressionRegister)
@@ -1932,12 +1933,17 @@ function InstructionGenerator.generate(ast)
 
     error("Unsupported statement node type: " .. tostring(nodeType))
   end
-  function processCodeBlock(list, isFunctionScope, parameters)
-    enterScope(isFunctionScope)
-    if parameters then
-      for _, parameter in ipairs(parameters) do
-        registerVariable(parameter, allocateRegister())
-      end
+  function processCodeBlock(list)
+    enterScope()
+    for index, node in ipairs(list) do
+      processStatementNode(node)
+    end
+    exitScope()
+  end
+  function processFunctionCodeBlock(list, parameters)
+    enterScope(true) -- Enter with function scope
+    for _, parameter in ipairs(parameters) do
+      registerVariable(parameter, allocateRegister())
     end
     for index, node in ipairs(list) do
       processStatementNode(node)
@@ -1945,12 +1951,13 @@ function InstructionGenerator.generate(ast)
     exitScope()
   end
   function processFunction(codeBlock, expressionRegister, parameters, isVarArg)
-    local oldProto  = currentProto
-    local proto     = newProto()
-    proto.numParams = #parameters
-    proto.isVarArg  = isVarArg
+    local oldProto   = currentProto
+    local proto      = newProto()
+    local parameters = parameters or {}
+    proto.numParams  = #parameters
+    proto.isVarArg   = isVarArg
 
-    processCodeBlock(codeBlock, true, parameters)
+    processFunctionCodeBlock(codeBlock, parameters)
 
     -- OP_RETURN [A, B]    return R(A), ... ,R(A+B-2)
     addInstruction("RETURN", 0, 1) -- Default return statement
