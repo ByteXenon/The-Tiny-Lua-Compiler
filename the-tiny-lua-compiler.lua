@@ -660,6 +660,12 @@ function Parser.parse(tokens)
           and token.TYPE  == "Character"
           and token.Value == character
   end
+  local function checkKeyword(keyword, token)
+    local token = token or currentToken
+    return token
+          and token.TYPE  == "Keyword"
+          and token.Value == keyword
+  end
   local function isComma(token)
     return token and token.TYPE == "Character" and token.Value == ","
   end
@@ -1007,7 +1013,7 @@ function Parser.parse(tokens)
   --// STATEMENT PARSERS //--
   local function parseLocal()
     consume() -- Consume the "local" token
-    if checkToken("Keyword", "function") then
+    if checkKeyword("function") then
       consume() -- Consume the "function" token
       local name = currentToken.Value
       consume() -- Consume the last token of the identifier)
@@ -1067,7 +1073,7 @@ function Parser.parse(tokens)
     expectKeyword("then")
     local ifCodeBlock = parseCodeBlock()
     local branches = { { Condition = ifCondition, CodeBlock = ifCodeBlock } }
-    while checkToken("Keyword", "elseif") do
+    while checkKeyword("elseif") do
       consume() -- Consume the "elseif" token
       local elseifCondition = consumeExpression()
       consume() -- Consume the last token of the elseif condition
@@ -1076,7 +1082,7 @@ function Parser.parse(tokens)
       table.insert(branches, { Condition = elseifCondition, CodeBlock = elseifCodeBlock })
     end
     local elseCodeBlock
-    if checkToken("Keyword", "else") then
+    if checkKeyword("else") then
       consume() -- Consume the "else" token
       elseCodeBlock = parseCodeBlock()
     end
@@ -1087,7 +1093,7 @@ function Parser.parse(tokens)
     consume() -- Consume the "for" token
     local variableName = expectTokenType("Identifier", true).Value
     consume() -- Consume the variable name
-    if checkCharacter(",") or checkToken("Keyword", "in") then
+    if checkCharacter(",") or checkKeyword("in") then
       local iteratorVariables = { variableName }
       while checkCharacter(",") do
         consume() -- Consume the comma
