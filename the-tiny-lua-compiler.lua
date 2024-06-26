@@ -648,12 +648,6 @@ function Parser.parse(tokens)
   end
 
   --// TOKEN CHECKERS //--
-  local function checkToken(tokenType, tokenValue, token)
-    local token = token or currentToken
-    return token
-          and token.TYPE  == tokenType
-          and token.Value == tokenValue
-  end
   local function checkCharacter(character, token)
     local token = token or currentToken
     return token
