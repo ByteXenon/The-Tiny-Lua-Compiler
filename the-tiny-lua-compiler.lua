@@ -766,10 +766,9 @@ function Parser.parse(tokens)
   end
   local function consumeTable()
     consume() -- Consume the "{" symbol
-    local elements         = {}
-    local implicitElements = {}
-    local explicitElements = {}
-    local lastImplicitElement
+    local elements            = {}
+    local implicitElements    = {}
+    local explicitElements    = {}
     local internalImplicitKey = 1
 
     -- Consume table elements
