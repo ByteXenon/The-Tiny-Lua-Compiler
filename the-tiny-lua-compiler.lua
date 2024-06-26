@@ -1490,6 +1490,12 @@ function InstructionGenerator.generate(ast)
     local returnAmount = node.ReturnValueAmount + 1
     local argumentAmount = #node.Arguments + 2
     if returnAmount <= 0 then returnAmount = 0 end
+    if node.Arguments[#node.Arguments] then
+      local lastArgument = node.Arguments[#node.Arguments]
+      if isMultiretNode(lastArgument) then
+        argumentAmount = 0
+      end
+    end
     -- OP_CALL [A, B, C]    R(A), ... ,R(A+C-2) := R(A)(R(A+1), ... ,R(A+B-1))
     addInstruction("CALL", expressionRegister, argumentAmount, returnAmount)
     deallocateRegisters(argumentRegisters)
