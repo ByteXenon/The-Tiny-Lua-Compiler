@@ -849,8 +849,10 @@ function Parser.parse(tokens)
     local tokenType = currentToken.TYPE
     local tokenValue = currentToken.Value
 
-    if tokenType == "Number" or tokenType == "String"
-     or tokenType == "Constant" or tokenType == "VarArg" then
+    if tokenType == "Number" or tokenType == "String" or tokenType == "Constant" then
+      return currentToken
+    elseif tokenType == "VarArg" then
+      currentToken.ReturnValueAmount = 1
       return currentToken
     elseif tokenType == "Identifier" then
       local variableType = getVariableType(tokenValue)
