@@ -1755,7 +1755,13 @@ function InstructionGenerator.generate(ast)
     local expressions = node.Expressions
     local codeblock = node.Codeblock
     local iteratorRegisters = {}
-    local expressionRegisters = { processExpressionNode(expressions[1]) }
+    local expressionRegisters = { }
+    for index, expression in ipairs(expressions) do
+      local currentExpressionRegisters = { processExpressionNode(expression) }
+      for _, register in ipairs(currentExpressionRegisters) do
+        table.insert(expressionRegisters, register)
+      end
+    end
     -- OP_JMP [A, sBx]    pc+=sBx
     local startJmpInstruction, startJmpInstructionIndex = addInstruction("JMP", 0, 0) -- Placeholder
     local forGeneratorRegister = expressionRegisters[1]
