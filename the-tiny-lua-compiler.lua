@@ -807,7 +807,7 @@ function Parser.parse(tokens)
       table.insert(elements, element)
 
       consume() -- Consume the last token of the expression
-      local shouldContinue = checkCharacter(",")
+      local shouldContinue = checkCharacter(",") or checkCharacter(";")
       if not shouldContinue then break end
       consume() -- Consume ","
     end
