@@ -1646,10 +1646,15 @@ function InstructionGenerator.generate(ast)
     local codeblock          = node.Codeblock
     local parameters         = node.Parameters
     local isVarArg           = node.IsVarArg
+    local internalParameters = { } -- In case of a method, we need to add the self parameter
+    for index = 1, #parameters do internalParameters[index] = parameters[index] end
+    if isMethod then
+      table.insert(internalParameters, 1, "self")
+    end
     if #fields > 0 then
       local closureRegister = allocateRegister()
       local lastField = fields[#fields]
-      processFunction(codeblock, closureRegister, parameters, isVarArg, lastField)
+      processFunction(codeblock, closureRegister, internalParameters, isVarArg, lastField)
       local expressionRegister = processExpressionNode(expression)
       for index, field in ipairs(fields) do
         local fieldRegister = allocateRegister()
@@ -1670,17 +1675,17 @@ function InstructionGenerator.generate(ast)
     local variableName = expression.Value
     if expression.VariableType == "Local" then
       local localRegister = findVariableRegister(variableName)
-      processFunction(codeblock, localRegister, parameters, isVarArg, variableName)
+      processFunction(codeblock, localRegister, internalParameters, isVarArg, variableName)
     elseif expression.VariableType == "Upvalue" then
       local upvalueIndex = findOrCreateUpvalue(variableName)
       local closureRegister = allocateRegister()
-      processFunction(codeblock, closureRegister, parameters, isVarArg, variableName)
+      processFunction(codeblock, closureRegister, internalParameters, isVarArg, variableName)
       -- OP_SETUPVAL [A, B]    UpValue[B] := R(A)
       addInstruction("SETUPVAL", closureRegister, findOrCreateUpvalue(variableName))
       deallocateRegister(closureRegister)
     elseif expression.VariableType == "Global" then
       local globalRegister = allocateRegister()
-      processFunction(codeblock, globalRegister, parameters, isVarArg, variableName)
+      processFunction(codeblock, globalRegister, internalParameters, isVarArg, variableName)
       -- OP_SETGLOBAL [A, Bx]    Gbl[Kst(Bx)] := R(A)
       addInstruction("SETGLOBAL", globalRegister, findOrCreateConstant(variableName))
       deallocateRegister(globalRegister)
