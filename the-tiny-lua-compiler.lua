@@ -467,7 +467,7 @@ function Tokenizer.tokenize(code)
           consume() -- Consume the "=" character
           closingDepth = closingDepth + 1
         end
-        if closingDepth == depth then break end
+        if curChar == "]" and closingDepth == depth then break end
       elseif curChar == "\0" then
         error("Unclosed long comment")
       end
