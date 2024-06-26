@@ -654,6 +654,12 @@ function Parser.parse(tokens)
           and token.TYPE  == tokenType
           and token.Value == tokenValue
   end
+  local function checkCharacter(character, token)
+    local token = token or currentToken
+    return token
+          and token.TYPE  == "Character"
+          and token.Value == character
+  end
   local function isComma(token)
     return token and token.TYPE == "Character" and token.Value == ","
   end
@@ -737,7 +743,7 @@ function Parser.parse(tokens)
   local function consumeParameterList()
     expectCharacter("(")
     local parameters, isVarArg = {}, false
-    while not checkToken("Character", ")") do
+    while not checkCharacter(")") do
       if currentToken.TYPE == "Identifier" then
         table.insert(parameters, currentToken.Value)
       elseif currentToken.TYPE == "VarArg" then
@@ -772,10 +778,10 @@ function Parser.parse(tokens)
     local internalImplicitKey = 1
 
     -- Consume table elements
-    while not checkToken("Character", "}") do
+    while not checkCharacter("}") do
       local key, value
       local isImplicitKey = false
-      if checkToken("Character", "[") then
+      if checkCharacter("[") then
         -- [<expression>] = <expression>
         consume() -- Consume "["
         key = consumeExpression()
@@ -783,7 +789,7 @@ function Parser.parse(tokens)
         expectCharacter("]")
         expectCharacter("=")
         value = consumeExpression()
-      elseif currentToken.TYPE == "Identifier" and checkToken("Character", "=", lookAhead()) then
+      elseif currentToken.TYPE == "Identifier" and checkCharacter("=", lookAhead()) then
         -- <identifier> = <expression>
         key = { TYPE = "String", Value = currentToken.Value }
         consume(2) -- Consume key and "="
@@ -801,7 +807,7 @@ function Parser.parse(tokens)
       table.insert(elements, element)
 
       consume() -- Consume the last token of the expression
-      local shouldContinue = checkToken("Character", ",")
+      local shouldContinue = checkCharacter(",")
       if not shouldContinue then break end
       consume() -- Consume ","
     end
@@ -848,7 +854,7 @@ function Parser.parse(tokens)
   end
   local function consumeOptionalSemilcolon()
     local nextToken = lookAhead()
-    if checkToken("Character", ";", nextToken) then
+    if checkCharacter(";", nextToken) then
       consume()
     end
   end
@@ -1012,7 +1018,7 @@ function Parser.parse(tokens)
       return { TYPE = "LocalFunctionDeclaration", Name = name, Codeblock = codeblock, Parameters = parameters, IsVarArg = isVarArg }
     end
     local variables = consumeIdentifierList()
-    if checkToken("Character", "=", lookAhead()) then
+    if checkCharacter("=", lookAhead()) then
       consume() -- Consume the last token of the last identifier
       expectCharacter("=")
       local expressions = consumeExpressions()
@@ -1081,9 +1087,9 @@ function Parser.parse(tokens)
     consume() -- Consume the "for" token
     local variableName = expectTokenType("Identifier", true).Value
     consume() -- Consume the variable name
-    if checkToken("Character", ",") or checkToken("Keyword", "in") then
+    if checkCharacter(",") or checkToken("Keyword", "in") then
       local iteratorVariables = { variableName }
-      while checkToken("Character", ",") do
+      while checkCharacter(",") do
         consume() -- Consume the comma
         local newVariableName = expectTokenType("Identifier", true).Value
         table.insert(iteratorVariables, newVariableName)
@@ -1113,11 +1119,11 @@ function Parser.parse(tokens)
     local expression = { TYPE = "Variable", Value = variableName, VariableType = variableType }
     local fields, isMethod = { }, false
     while consume() do
-      if checkToken("Character", ".") then
+      if checkCharacter(".") then
         consume() -- Consume the "."
         local fieldName = expectTokenType("Identifier", true).Value
         table.insert(fields, fieldName)
-      elseif checkToken("Character", ":") then
+      elseif checkCharacter(":") then
         consume() -- Consume the ":"
         local methodName = expectTokenType("Identifier", true).Value
         table.insert(fields, methodName)
