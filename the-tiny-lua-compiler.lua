@@ -825,6 +825,19 @@ function Parser.parse(tokens)
     consume() -- Consume the last token of the expression
     return { TYPE = "FunctionCall", Expression = currentExpression, Arguments = arguments, ReturnValueAmount = 1 }
   end
+  local function consumeImplicitFunctionCall(lvalue)
+    local currentTokenType = currentToken.TYPE
+
+    -- <string>?
+    if currentTokenType == "String" then
+      local arguments = { currentToken }
+      return { TYPE = "FunctionCall", Expression = lvalue, Arguments = arguments, ReturnValueAmount = 1 }
+    end
+
+    -- <table>?
+    local arguments = { consumeTable() }
+    return { TYPE = "FunctionCall", Expression = lvalue, Arguments = arguments, ReturnValueAmount = 1 }
+  end
   local function consumeMethodCall(currentExpression)
     local methodIdentifier = consume().Value -- Consume the ":" character, and get the method identifier
     consume() -- Consume the method identifier
@@ -897,6 +910,15 @@ function Parser.parse(tokens)
       consume()
       -- <expression> \[ <expression> \]
       return consumeBracketTableIndex(primaryExpression)
+    elseif nextToken then
+      -- In some edge cases, a user may call a function using only string,
+      -- example: `print "Hello, World!"`. This is a valid Lua syntax.
+      -- Let's handle both strings and tables here for that case.
+      local nextTokenType = nextToken.TYPE
+      if nextTokenType == "String" or (nextTokenValue == "{" and nextTokenType == "Character") then
+        consume()
+        return consumeImplicitFunctionCall(primaryExpression)
+      end
     end
     return nil
   end
