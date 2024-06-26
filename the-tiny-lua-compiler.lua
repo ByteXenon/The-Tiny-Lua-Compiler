@@ -1103,6 +1103,9 @@ function Parser.parse(tokens)
       else break end
     end
     local parameters, isVarArg = consumeParameterList()
+    if isMethod then
+      table.insert(parameters, 1, "self")
+    end
     local codeblock = parseCodeBlock(true, parameters)
     expectKeyword("end", true)
     return { TYPE = "FunctionDeclaration",
