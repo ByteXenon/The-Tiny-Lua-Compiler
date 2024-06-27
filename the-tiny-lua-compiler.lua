@@ -1449,7 +1449,7 @@ function InstructionGenerator.generate(ast)
     return instruction, #code
   end
 
-  local processExpressionNode, processExpressionNodes, processStatementNode
+  local processExpressionNode, processExpressionNodes, processStatementNode,
         processCodeBlock, processFunctionCodeBlock, processFunction
 
   --// EXPRESSION COMPILERS //--
@@ -1474,13 +1474,7 @@ function InstructionGenerator.generate(ast)
   end
   local function compileFunctionCallNode(node, expressionRegister)
     processExpressionNode(node.Expression, expressionRegister)
-    local argumentRegisters = {}
-    for index, argument in ipairs(node.Arguments) do
-      local currentArgumentRegisters = { processExpressionNode(argument) }
-      for _, register in ipairs(currentArgumentRegisters) do
-        table.insert(argumentRegisters, register)
-      end
-    end
+    local argumentRegisters = processExpressionNodes(node.Arguments)
     local returnAmount = node.ReturnValueAmount + 1
     local argumentAmount = #node.Arguments + 1
     if returnAmount <= 0 then returnAmount = 0 end
@@ -1508,13 +1502,8 @@ function InstructionGenerator.generate(ast)
     -- OP_SELF [A, B, C]    R(A+1) := R(B) R(A) := R(B)[RK(C)]
     addInstruction("SELF", expressionRegister, expressionRegister, nodeIndexRegister)
     deallocateRegister(nodeIndexRegister)
-    local argumentRegisters = { selfArgumentRegister } -- Allocate the self register
-    for index, argument in ipairs(node.Arguments) do
-      local currentArgumentRegisters = { processExpressionNode(argument) }
-      for _, register in ipairs(currentArgumentRegisters) do
-        table.insert(argumentRegisters, register)
-      end
-    end
+    local argumentRegisters = processExpressionNodes(node.Arguments)
+    table.insert(argumentRegisters, 1, selfArgumentRegister) -- Insert the self argument at the beginning
     local returnAmount = node.ReturnValueAmount + 1
     local argumentAmount = #node.Arguments + 2
     if returnAmount <= 0 then returnAmount = 0 end
@@ -1783,13 +1772,7 @@ function InstructionGenerator.generate(ast)
     local expressions = node.Expressions
     local codeblock = node.Codeblock
     local iteratorRegisters = {}
-    local expressionRegisters = { }
-    for index, expression in ipairs(expressions) do
-      local currentExpressionRegisters = { processExpressionNode(expression) }
-      for _, register in ipairs(currentExpressionRegisters) do
-        table.insert(expressionRegisters, register)
-      end
-    end
+    local expressionRegisters = processExpressionNodes(expressions)
     -- OP_JMP [A, sBx]    pc+=sBx
     local startJmpInstruction, startJmpInstructionIndex = addInstruction("JMP", 0, 0) -- Placeholder
     local forGeneratorRegister = expressionRegisters[1]
@@ -1819,13 +1802,7 @@ function InstructionGenerator.generate(ast)
     unregisterVariables(iteratorVariables)
   end
   local function compileReturnStatementNode(node)
-    local expressionRegisters = {}
-    for index, expression in ipairs(node.Expressions) do
-      local currentExpressionRegisters = { processExpressionNode(expression) }
-      for _, register in ipairs(currentExpressionRegisters) do
-        table.insert(expressionRegisters, register)
-      end
-    end
+    local expressionRegisters = processExpressionNodes(node.Expressions)
     local startRegister = expressionRegisters[1] or 0
     local returnAmount = #node.Expressions + 1
     local lastExpression = node.Expressions[#node.Expressions]
@@ -1895,13 +1872,7 @@ function InstructionGenerator.generate(ast)
     updateJumpInstructions(jumpToEndInstructions)
   end
   local function compileVariableAssignmentNode(node)
-    local expressionRegisters = {}
-    for index, expression in ipairs(node.Expressions) do
-      local currentExpressionRegisters = { processExpressionNode(expression) }
-      for _, register in ipairs(currentExpressionRegisters) do
-        table.insert(expressionRegisters, register)
-      end
-    end
+    local expressionRegisters = processExpressionNodes(node.Expressions)
     for index, lvalue in ipairs(node.LValues) do
       local lvalueType = lvalue.TYPE
       if lvalueType == "Variable" then
