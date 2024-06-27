@@ -1449,7 +1449,7 @@ function InstructionGenerator.generate(ast)
     return instruction, #code
   end
 
-  local processExpressionNode, processStatementNode,
+  local processExpressionNode, processExpressionNodes, processStatementNode
         processCodeBlock, processFunctionCodeBlock, processFunction
 
   --// EXPRESSION COMPILERS //--
@@ -1979,6 +1979,16 @@ function InstructionGenerator.generate(ast)
     end
 
     error("Unsupported statement node type: " .. tostring(nodeType))
+  end
+  function processExpressionNodes(list)
+    local registers = {}
+    for _, node in ipairs(list) do
+      local currentExpressionRegisters = { processExpressionNode(node) }
+      for _, register in ipairs(currentExpressionRegisters) do
+        table.insert(registers, register)
+      end
+    end
+    return registers
   end
   function processCodeBlock(list)
     enterScope()
