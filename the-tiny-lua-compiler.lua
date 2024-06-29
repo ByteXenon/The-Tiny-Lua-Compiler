@@ -1475,7 +1475,7 @@ function InstructionGenerator.generate(ast)
   local function compileFunctionCallNode(node, expressionRegister)
     processExpressionNode(node.Expression, expressionRegister)
     local argumentRegisters = processExpressionNodes(node.Arguments)
-    local returnAmount = node.ReturnValueAmount + 1
+    local returnAmount      = node.ReturnValueAmount + 1
     local argumentAmount = #node.Arguments + 1
     if returnAmount <= 0 then returnAmount = 0 end
     if node.Arguments[#node.Arguments] then
@@ -1614,7 +1614,7 @@ function InstructionGenerator.generate(ast)
       -- OP_TEST [A, C]    if not (R(A) <=> C) then pc++
       addInstruction("TEST", leftExpressionRegister, 0, isConditionTrue)
       -- OP_JMP [A, sBx]    pc+=sBx
-      local jumpInstruction, jumpInstructionIndex = addInstruction("JMP", 0, 0) -- Placeholder
+      local jumpInstruction, jumpInstructionIndex = addInstruction("JMP", 0, 0)
       processExpressionNode(node.Right, expressionRegister)
       updateJumpInstruction(jumpInstructionIndex)
     elseif COMPILER_COMPARISON_OPERATOR_LOOKUP[nodeOperator] then
@@ -1644,8 +1644,8 @@ function InstructionGenerator.generate(ast)
     return expressionRegister
   end
   local function compileUnaryOperatorNode(node, expressionRegister)
-    local nodeOperator = node.Operator
-    local operatorOpcode = COMPILER_UNARY_OPERATOR_LOOKUP[nodeOperator]
+    local nodeOperator      = node.Operator
+    local operatorOpcode    = COMPILER_UNARY_OPERATOR_LOOKUP[nodeOperator]
     local operandExpression = processExpressionNode(node.Operand)
     addInstruction(operatorOpcode, expressionRegister, operandExpression)
     deallocateRegister(operandExpression)
@@ -1655,7 +1655,7 @@ function InstructionGenerator.generate(ast)
   --// STATEMENT COMPILERS //--
   local function compileBreakStatementNode(node)
     -- OP_JMP [A, sBx]    pc+=sBx
-    local jumpInstruction, jumpInstructionIndex = addInstruction("JMP", 0, 0) -- Placeholder
+    local jumpInstruction, jumpInstructionIndex = addInstruction("JMP", 0, 0)
     table.insert(breakInstructions, jumpInstructionIndex)
   end
   local function compileLocalFunctionDeclarationNode(node)
@@ -1668,12 +1668,12 @@ function InstructionGenerator.generate(ast)
     processFunction(codeblock, localRegister, parameters, isVarArg, name)
   end
   local function compileFunctionDeclarationNode(node)
-    local expression         = node.Expression
-    local fields             = node.Fields
-    local isMethod           = node.IsMethod
-    local codeblock          = node.Codeblock
-    local parameters         = node.Parameters
-    local isVarArg           = node.IsVarArg
+    local expression = node.Expression
+    local fields     = node.Fields
+    local isMethod   = node.IsMethod
+    local codeblock  = node.Codeblock
+    local parameters = node.Parameters
+    local isVarArg   = node.IsVarArg
     if #fields > 0 then
       local closureRegister = allocateRegister()
       local lastField = fields[#fields]
@@ -1738,12 +1738,12 @@ function InstructionGenerator.generate(ast)
     end
   end
   local function compileNumericForLoopNode(node)
-    local variableName = node.VariableName
-    local expressions = node.Expressions
-    local codeblock = node.Codeblock
+    local variableName  = node.VariableName
+    local expressions   = node.Expressions
+    local codeblock     = node.Codeblock
     local startRegister = processExpressionNode(expressions[1])
-    local endRegister = processExpressionNode(expressions[2])
-    local stepRegister = allocateRegister()
+    local endRegister   = processExpressionNode(expressions[2])
+    local stepRegister  = allocateRegister()
     if expressions[3] then
       stepRegister = processExpressionNode(expressions[3], stepRegister)
     else
@@ -1768,16 +1768,16 @@ function InstructionGenerator.generate(ast)
     deallocateRegisters({ startRegister, endRegister, stepRegister })
   end
   local function compileGenericForLoopNode(node)
-    local iteratorVariables = node.IteratorVariables
-    local expressions = node.Expressions
-    local codeblock = node.Codeblock
-    local iteratorRegisters = {}
+    local iteratorVariables   = node.IteratorVariables
+    local expressions         = node.Expressions
+    local codeblock           = node.Codeblock
+    local iteratorRegisters   = {}
     local expressionRegisters = processExpressionNodes(expressions)
     -- OP_JMP [A, sBx]    pc+=sBx
-    local startJmpInstruction, startJmpInstructionIndex = addInstruction("JMP", 0, 0) -- Placeholder
+    local startJmpInstruction, startJmpInstructionIndex = addInstruction("JMP", 0, 0)
     local forGeneratorRegister = expressionRegisters[1]
-    local forStateRegister = expressionRegisters[2]
-    local forControlRegister = expressionRegisters[3]
+    local forStateRegister     = expressionRegisters[2]
+    local forControlRegister   = expressionRegisters[3]
     if not (forGeneratorRegister and forStateRegister and forControlRegister) then
       error("Expected 3 expression registers")
     end
@@ -1803,9 +1803,9 @@ function InstructionGenerator.generate(ast)
   end
   local function compileReturnStatementNode(node)
     local expressionRegisters = processExpressionNodes(node.Expressions)
-    local startRegister = expressionRegisters[1] or 0
-    local returnAmount = #node.Expressions + 1
-    local lastExpression = node.Expressions[#node.Expressions]
+    local startRegister       = expressionRegisters[1] or 0
+    local returnAmount        = #node.Expressions + 1
+    local lastExpression      = node.Expressions[#node.Expressions]
     if isMultiretNode(lastExpression) then
       returnAmount = 0
     end
@@ -1814,7 +1814,7 @@ function InstructionGenerator.generate(ast)
     deallocateRegisters(expressionRegisters)
   end
   local function compileWhileLoopNode(node)
-    local loopStart = #code
+    local loopStart         = #code
     local conditionRegister = processExpressionNode(node.Condition)
     -- OP_TEST [A, C]    if not (R(A) <=> C) then pc++
     addInstruction("TEST", conditionRegister, 0, 0)
@@ -1855,7 +1855,7 @@ function InstructionGenerator.generate(ast)
       -- OP_TEST [A, C]    if not (R(A) <=> C) then pc++
       addInstruction("TEST", conditionRegister, 0, 0)
       -- OP_JMP [A, sBx]    pc+=sBx
-      local conditionJumpInstruction, conditionJumpInstructionIndex = addInstruction("JMP", 0, 0) -- Placeholder
+      local conditionJumpInstruction, conditionJumpInstructionIndex = addInstruction("JMP", 0, 0)
       deallocateRegister(conditionRegister)
       processCodeBlock(codeBlock)
       if index < #branches or elseCodeBlock then
