@@ -1793,7 +1793,7 @@ function InstructionGenerator.generate(ast)
     updateJumpInstruction(startJmpInstructionIndex)
     -- OP_TFORLOOP [A, C]    R(A+3), ... ,R(A+2+C) := R(A)(R(A+1), R(A+2))
     --                       if R(A+3) ~= nil then R(A+2)=R(A+3) else pc++
-    local tforloopInstruction = addInstruction("TFORLOOP", forGeneratorRegister, 0, #iteratorVariables)
+    addInstruction("TFORLOOP", forGeneratorRegister, 0, #iteratorVariables)
     -- OP_JMP [A, sBx]    pc+=sBx
     addInstruction("JMP", 0, loopStart - #code - 1)
     updateJumpInstructions(breakInstructions)
