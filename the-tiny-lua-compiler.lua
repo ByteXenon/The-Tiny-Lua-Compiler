@@ -1446,7 +1446,7 @@ function InstructionGenerator.generate(ast)
   local function addInstruction(opname, a, b, c)
     local instruction = { opname, a, b, c }
     table.insert(code, instruction)
-    return instruction, #code
+    return #code
   end
 
   local processExpressionNode, processExpressionNodes, processStatementNode,
@@ -1614,7 +1614,7 @@ function InstructionGenerator.generate(ast)
       -- OP_TEST [A, C]    if not (R(A) <=> C) then pc++
       addInstruction("TEST", leftExpressionRegister, 0, isConditionTrue)
       -- OP_JMP [A, sBx]    pc+=sBx
-      local jumpInstruction, jumpInstructionIndex = addInstruction("JMP", 0, 0)
+      local jumpInstructionIndex = addInstruction("JMP", 0, 0)
       processExpressionNode(node.Right, expressionRegister)
       updateJumpInstruction(jumpInstructionIndex)
     elseif COMPILER_COMPARISON_OPERATOR_LOOKUP[nodeOperator] then
@@ -1655,7 +1655,7 @@ function InstructionGenerator.generate(ast)
   --// STATEMENT COMPILERS //--
   local function compileBreakStatementNode(node)
     -- OP_JMP [A, sBx]    pc+=sBx
-    local jumpInstruction, jumpInstructionIndex = addInstruction("JMP", 0, 0)
+    local jumpInstructionIndex = addInstruction("JMP", 0, 0)
     table.insert(breakInstructions, jumpInstructionIndex)
   end
   local function compileLocalFunctionDeclarationNode(node)
@@ -1750,7 +1750,7 @@ function InstructionGenerator.generate(ast)
       addInstruction("LOADK", stepRegister, findOrCreateConstant(1))
     end
     -- OP_FORPREP [A, sBx]    R(A)-=R(A+2) pc+=sBx
-    local forprepInstruction, forprepInstructionIndex = addInstruction("FORPREP", startRegister, 0)
+    local forprepInstructionIndex = addInstruction("FORPREP", startRegister, 0)
     local loopStart = #code
     registerVariable(variableName, startRegister)
     local oldBreakInstructions = breakInstructions
@@ -1772,7 +1772,7 @@ function InstructionGenerator.generate(ast)
     local codeblock           = node.Codeblock
     local expressionRegisters = processExpressionNodes(expressions)
     -- OP_JMP [A, sBx]    pc+=sBx
-    local startJmpInstruction, startJmpInstructionIndex = addInstruction("JMP", 0, 0)
+    local startJmpInstructionIndex = addInstruction("JMP", 0, 0)
     local forGeneratorRegister = expressionRegisters[1]
     local forStateRegister     = expressionRegisters[2]
     local forControlRegister   = expressionRegisters[3]
@@ -1816,7 +1816,7 @@ function InstructionGenerator.generate(ast)
     -- OP_TEST [A, C]    if not (R(A) <=> C) then pc++
     addInstruction("TEST", conditionRegister, 0, 0)
     -- OP_JMP [A, sBx]    pc+=sBx
-    local jumpInstruction, jumpInstructionIndex = addInstruction("JMP", 0, 0)
+    local jumpInstructionIndex = addInstruction("JMP", 0, 0)
     deallocateRegister(conditionRegister)
     local oldBreakInstructions = breakInstructions
     breakInstructions = {}
@@ -1851,12 +1851,12 @@ function InstructionGenerator.generate(ast)
       -- OP_TEST [A, C]    if not (R(A) <=> C) then pc++
       addInstruction("TEST", conditionRegister, 0, 0)
       -- OP_JMP [A, sBx]    pc+=sBx
-      local conditionJumpInstruction, conditionJumpInstructionIndex = addInstruction("JMP", 0, 0)
+      local conditionJumpInstructionIndex = addInstruction("JMP", 0, 0)
       deallocateRegister(conditionRegister)
       processCodeBlock(codeBlock)
       if index < #branches or elseCodeBlock then
         -- OP_JMP [A, sBx]    pc+=sBx
-        local instruction, jumpInstructionIndex = addInstruction("JMP", 0, 0)
+        local jumpInstructionIndex = addInstruction("JMP", 0, 0)
         table.insert(jumpToEndInstructions, jumpInstructionIndex)
       end
       updateJumpInstruction(conditionJumpInstructionIndex)
