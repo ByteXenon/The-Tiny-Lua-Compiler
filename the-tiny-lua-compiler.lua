@@ -1670,7 +1670,6 @@ function InstructionGenerator.generate(ast)
   local function compileFunctionDeclarationNode(node)
     local expression = node.Expression
     local fields     = node.Fields
-    local isMethod   = node.IsMethod
     local codeblock  = node.Codeblock
     local parameters = node.Parameters
     local isVarArg   = node.IsVarArg
@@ -1819,7 +1818,6 @@ function InstructionGenerator.generate(ast)
     -- OP_JMP [A, sBx]    pc+=sBx
     local jumpInstruction, jumpInstructionIndex = addInstruction("JMP", 0, 0)
     deallocateRegister(conditionRegister)
-    local codeStart = #code
     local oldBreakInstructions = breakInstructions
     breakInstructions = {}
     processCodeBlock(node.Codeblock)
