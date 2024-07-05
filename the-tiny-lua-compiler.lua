@@ -501,9 +501,8 @@ function Tokenizer.tokenize(code)
         return { TYPE = "Keyword", Value = identifier }
       elseif TOKENIZER_LUA_CONSTANTS_LOOKUP[identifier] then
         return { TYPE = "Constant", Value = identifier }
-      else
-        return { TYPE = "Identifier", Value = identifier }
       end
+      return { TYPE = "Identifier", Value = identifier }
     elseif isString(curChar) then
       return { TYPE = "String", Value = consumeString() }
     elseif isVarArg() then
