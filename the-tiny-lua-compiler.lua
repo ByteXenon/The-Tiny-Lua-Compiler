@@ -2056,10 +2056,7 @@ function Compiler.compile(proto)
   --// BYTE MANIPULATION (needed for compiling to bytecode) //--
   local function twosComplement(value)
     local value = value or 0
-    if value < 0 then
-      value = (-value) - 1
-    end
-    return value
+    return math.max(value, -value - 1)
   end
   local function makeBytes(value, byteCount)
     local bytes = {}
