@@ -1771,7 +1771,6 @@ function InstructionGenerator.generate(ast)
     local iteratorVariables   = node.IteratorVariables
     local expressions         = node.Expressions
     local codeblock           = node.Codeblock
-    local iteratorRegisters   = {}
     local expressionRegisters = processExpressionNodes(expressions)
     -- OP_JMP [A, sBx]    pc+=sBx
     local startJmpInstruction, startJmpInstructionIndex = addInstruction("JMP", 0, 0)
@@ -1784,7 +1783,6 @@ function InstructionGenerator.generate(ast)
     local loopStart = #code
     for index, iteratorVariable in ipairs(iteratorVariables) do
       local iteratorRegister = allocateRegister()
-      iteratorRegisters[index] = iteratorRegister
       registerVariable(iteratorVariable, iteratorRegister)
     end
     local oldBreakInstructions = breakInstructions
