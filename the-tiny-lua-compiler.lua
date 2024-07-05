@@ -2204,8 +2204,8 @@ end
 
 -- Now I'm just exporting everything...
 return {
-  Tokenizer = Tokenizer,
-  Parser = Parser,
+  Tokenizer            = Tokenizer,
+  Parser               = Parser,
   InstructionGenerator = InstructionGenerator,
-  Compiler = Compiler
+  Compiler             = Compiler
 }
