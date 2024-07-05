@@ -1183,9 +1183,9 @@ function Parser.parse(tokens)
   --// CODE BLOCK PARSERS //--
   function getNextNode()
     local currentTokenValue = currentToken.Value
-    local currentTokenType = currentToken.TYPE
+    local currentTokenType  = currentToken.TYPE
+    local node
     if currentTokenType == "Keyword" then
-      local node
       if PARSER_STOP_KEYWORDS[currentTokenValue] then return
       elseif currentTokenValue == "local"        then node = parseLocal()
       elseif currentTokenValue == "while"        then node = parseWhile()
@@ -1197,11 +1197,10 @@ function Parser.parse(tokens)
       elseif currentTokenValue == "for"          then node = parseFor()
       elseif currentTokenValue == "function"     then node = parseFunction()
       else error("Unsupported keyword: " .. currentTokenValue) end
-      consumeOptionalSemilcolon()
-      return node
+    else
+      node = parseFunctionCallOrVariableAssignment()
     end
 
-    local node = parseFunctionCallOrVariableAssignment()
     consumeOptionalSemilcolon()
     return node
   end
