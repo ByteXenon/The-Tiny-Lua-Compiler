@@ -2006,6 +2006,7 @@ function InstructionGenerator.generate(ast)
   --// MAIN //--
   local function generate()
     local proto = newProto()
+    proto.isVarArg = true
     processCodeBlock(ast)
     -- OP_RETURN [A, B]    return R(A), ... ,R(A+B-2)
     addInstruction("RETURN", 0, 1) -- Default return statement
