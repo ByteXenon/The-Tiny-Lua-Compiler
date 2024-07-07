@@ -1467,7 +1467,7 @@ function InstructionGenerator.generate(ast)
     local codeblock  = node.Codeblock
     local parameters = node.Parameters
     local isVarArg   = node.isVarArg
-    processFunction(codeblock, expressionRegister, parameters, isVarArg)
+    processFunction(node, expressionRegister)
     return expressionRegister
   end
   local function compileFunctionCallNode(node, expressionRegister)
@@ -1663,7 +1663,7 @@ function InstructionGenerator.generate(ast)
     local isVarArg      = node.IsVarArg
     local localRegister = allocateRegister()
     registerVariable(name, localRegister)
-    processFunction(codeblock, localRegister, parameters, isVarArg, name)
+    processFunction(node, localRegister, name)
   end
   local function compileFunctionDeclarationNode(node)
     local expression = node.Expression
@@ -1674,7 +1674,7 @@ function InstructionGenerator.generate(ast)
     if #fields > 0 then
       local closureRegister = allocateRegister()
       local lastField = fields[#fields]
-      processFunction(codeblock, closureRegister, parameters, isVarArg, lastField)
+      processFunction(node, closureRegister, lastField)
       local expressionRegister = processExpressionNode(expression)
       for index, field in ipairs(fields) do
         local fieldRegister = allocateRegister()
@@ -1695,17 +1695,17 @@ function InstructionGenerator.generate(ast)
     local variableName = expression.Value
     if expression.VariableType == "Local" then
       local localRegister = findVariableRegister(variableName)
-      processFunction(codeblock, localRegister, parameters, isVarArg, variableName)
+      processFunction(node, localRegister, variableName)
     elseif expression.VariableType == "Upvalue" then
       local upvalueIndex = findOrCreateUpvalue(variableName)
       local closureRegister = allocateRegister()
-      processFunction(codeblock, closureRegister, parameters, isVarArg, variableName)
+      processFunction(node, closureRegister, variableName)
       -- OP_SETUPVAL [A, B]    UpValue[B] := R(A)
       addInstruction("SETUPVAL", closureRegister, findOrCreateUpvalue(variableName))
       deallocateRegister(closureRegister)
     elseif expression.VariableType == "Global" then
       local globalRegister = allocateRegister()
-      processFunction(codeblock, globalRegister, parameters, isVarArg, variableName)
+      processFunction(node, globalRegister, variableName)
       -- OP_SETGLOBAL [A, Bx]    Gbl[Kst(Bx)] := R(A)
       addInstruction("SETGLOBAL", globalRegister, findOrCreateConstant(variableName))
       deallocateRegister(globalRegister)
@@ -1972,7 +1972,10 @@ function InstructionGenerator.generate(ast)
     end
     exitScope()
   end
-  function processFunction(codeBlock, expressionRegister, parameters, isVarArg, name)
+  function processFunction(node, expressionRegister, name)
+    local codeBlock    = node.Codeblock
+    local parameters   = node.Parameters
+    local isVarArg     = node.IsVarArg
     local oldProto     = currentProto
     local proto        = newProto()
     local parameters   = parameters or {}
