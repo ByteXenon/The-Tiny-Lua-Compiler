@@ -1464,9 +1464,6 @@ function InstructionGenerator.generate(ast)
     return expressionRegister
   end
   local function compileFunctionNode(node, expressionRegister)
-    local codeblock  = node.Codeblock
-    local parameters = node.Parameters
-    local isVarArg   = node.isVarArg
     processFunction(node, expressionRegister)
     return expressionRegister
   end
@@ -1658,9 +1655,6 @@ function InstructionGenerator.generate(ast)
   end
   local function compileLocalFunctionDeclarationNode(node)
     local name          = node.Name
-    local codeblock     = node.Codeblock
-    local parameters    = node.Parameters
-    local isVarArg      = node.IsVarArg
     local localRegister = allocateRegister()
     registerVariable(name, localRegister)
     processFunction(node, localRegister, name)
@@ -1668,9 +1662,6 @@ function InstructionGenerator.generate(ast)
   local function compileFunctionDeclarationNode(node)
     local expression = node.Expression
     local fields     = node.Fields
-    local codeblock  = node.Codeblock
-    local parameters = node.Parameters
-    local isVarArg   = node.IsVarArg
     if #fields > 0 then
       local closureRegister = allocateRegister()
       local lastField = fields[#fields]
