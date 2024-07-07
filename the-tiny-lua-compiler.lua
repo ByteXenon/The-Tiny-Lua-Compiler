@@ -152,17 +152,17 @@ local TOKENIZER_LUA_OPERATORS = {
 
 -- Maps escaped sequences to characters for string literals.
 local TOKENIZER_ESCAPED_CHARACTER_CONVERSIONS = {
-  ["a"]     = "\a", -- bell
-  ["b"]     = "\b", -- backspace
-  ["f"]     = "\f", -- form feed
-  ["n"]     = "\n", -- newline
-  ["r"]     = "\r", -- carriage return
-  ["t"]     = "\t", -- horizontal tab
-  ["v"]     = "\v", -- vertical tab
+  ["a"]  = "\a", -- bell
+  ["b"]  = "\b", -- backspace
+  ["f"]  = "\f", -- form feed
+  ["n"]  = "\n", -- newline
+  ["r"]  = "\r", -- carriage return
+  ["t"]  = "\t", -- horizontal tab
+  ["v"]  = "\v", -- vertical tab
 
-  [ "\\" ] = "\\",  -- backslash
-  [ "\"" ] = "\"",  -- double quote
-  [ "\'" ] = "\'",  -- single quote
+  ["\\"] = "\\", -- backslash
+  ["\""] = "\"", -- double quote
+  ["\'"] = "\'", -- single quote
 }
 
 -- Lookup for Lua's boolean and nil constants.
@@ -230,7 +230,6 @@ function Tokenizer.tokenize(code)
     charStream[charStreamLen] = char
   end
 
-  local charStream = charStream
   local curCharPos = 1
   local curChar = charStream[curCharPos]
 
@@ -250,27 +249,27 @@ function Tokenizer.tokenize(code)
 
   --// CHECKERS //--
   local function isWhitespace(char)
-    local char = char or curChar
+    char = char or curChar
     return char:match("%s")
   end
   local function isNumberStart(char)
-    local char = char or curChar
+    char = char or curChar
     return char:match("%d")
   end
   local function isNumber(char)
-    local char = char or curChar
+    char = char or curChar
     return char:match("%d")
   end
   local function isIdentifier(char)
-    local char = char or curChar
+    char = char or curChar
     return char:match("[%a%d_]")
   end
   local function isIdentifierStart(char)
-    local char = char or curChar
+    char = char or curChar
     return char:match("[%a_]")
   end
   local function isScientificNotationPrefix(char)
-    local char = char or curChar
+    char = char or curChar
     return char == "e" or char == "E"
   end
   local function isHexadecimalNumberPrefix()
@@ -469,7 +468,6 @@ function Tokenizer.tokenize(code)
 
   --// TOKENIZERS //--
   local function getNextToken()
-    local curChar = curChar
     if isWhitespace(curChar) then
       consumeWhitespace()
       return
@@ -488,7 +486,7 @@ function Tokenizer.tokenize(code)
         return { TYPE = "Constant", Value = identifier }
       end
       return { TYPE = "Identifier", Value = identifier }
-    elseif isString(curChar) then
+    elseif isString() then
       return { TYPE = "String", Value = consumeString() }
     elseif isVarArg() then
       consume(2)
@@ -573,7 +571,6 @@ local PARSER_LUA_BINARY_OPERATORS = createLookupTable({ "+",  "-",   "*",  "/",
 
 local Parser = {}
 function Parser.parse(tokens)
-  local tokens            = tokens
   local currentToken      = tokens[1]
   local currentTokenIndex = 1
   local scopeStack        = {}
@@ -633,13 +630,13 @@ function Parser.parse(tokens)
 
   --// TOKEN CHECKERS //--
   local function checkCharacter(character, token)
-    local token = token or currentToken
+    token = token or currentToken
     return token
           and token.TYPE  == "Character"
           and token.Value == character
   end
   local function checkKeyword(keyword, token)
-    local token = token or currentToken
+    token = token or currentToken
     return token
           and token.TYPE  == "Keyword"
           and token.Value == keyword
@@ -665,13 +662,6 @@ function Parser.parse(tokens)
   end
 
   --// EXPECTORS //--
-  local function expectToken(expectedType, expectedValue, skipConsume)
-    local actualType = currentToken and currentToken.TYPE or "nil"
-    assert(currentToken and currentToken.TYPE == expectedType, "Expected a " .. expectedType .. ", got: " .. actualType)
-    assert(currentToken.Value == expectedValue, "Expected '" .. expectedValue .. "'")
-    if not skipConsume then consume() end
-    return currentToken
-  end
   local function expectTokenType(expectedType, skipConsume)
     local actualType = currentToken and currentToken.TYPE or "nil"
     assert(actualType == expectedType, string.format("Expected a %s, got: %s", expectedType, actualType))
@@ -912,8 +902,8 @@ function Parser.parse(tokens)
     end
     return nil
   end
-  function parsePrefixExpression(precedence)
-    local primaryExpression = parsePrimaryExpression(precedence) -- <primary>
+  function parsePrefixExpression()
+    local primaryExpression = parsePrimaryExpression() -- <primary>
     if not primaryExpression then return end
 
     -- <suffix>*
@@ -929,7 +919,7 @@ function Parser.parse(tokens)
     local unaryOperator = currentToken
     -- <unary> ::= <unary operator> <unary> | <primary>
     if not isUnaryOperator(currentToken) then
-      return parsePrefixExpression(PARSER_UNARY_OPERATOR_PRECEDENCE)
+      return parsePrefixExpression()
     end
 
     -- <unary operator> <unary>
@@ -939,7 +929,7 @@ function Parser.parse(tokens)
   end
   function parseBinaryExpression(minPrecedence)
     -- <binary> ::= <unary> <binary operator> <binary> | <unary>
-    local minPrecedence = minPrecedence or 0
+    minPrecedence = minPrecedence or 0
     local expression = parseUnaryOperator() -- <unary>
     if not expression then return end
 
@@ -1274,7 +1264,7 @@ function InstructionGenerator.generate(ast)
   local currentProto
   local takenRegisters, code, constants,
         constantLookup, upvalues, upvalueLookup,
-        protos, numParams, isVarArg, functionName
+        protos
 
   --// PROTO MANAGEMENT //--
   local function setProto(proto)
@@ -1286,9 +1276,6 @@ function InstructionGenerator.generate(ast)
     upvalues       = proto.upvalues
     upvalueLookup  = proto.upvalueLookup
     protos         = proto.protos
-    numParams      = proto.numParams
-    isVarArg       = proto.isVarArg
-    functionName   = proto.functionName
   end
   local function newProto()
     currentProto = {
@@ -1382,7 +1369,7 @@ function InstructionGenerator.generate(ast)
   end
   local function exitScope()
     table.remove(scopes)
-    for variableName, register in pairs(currentScope.locals) do
+    for variableName in pairs(currentScope.locals) do
       unregisterVariable(variableName)
     end
     if #scopes > 0 then
@@ -1468,7 +1455,7 @@ function InstructionGenerator.generate(ast)
     addInstruction("CALL", expressionRegister, argumentAmount, returnAmount)
     deallocateRegisters(argumentRegisters)
     local returnRegisters = { expressionRegister }
-    for index = expressionRegister + 1, expressionRegister + node.ReturnValueAmount - 1 do
+    for _ = expressionRegister + 1, expressionRegister + node.ReturnValueAmount - 1 do
       table.insert(returnRegisters, allocateRegister())
     end
     return unpack(returnRegisters)
@@ -1497,7 +1484,7 @@ function InstructionGenerator.generate(ast)
     addInstruction("CALL", expressionRegister, argumentAmount, returnAmount)
     deallocateRegisters(argumentRegisters)
     local returnRegisters = { expressionRegister }
-    for index = expressionRegister + 1, expressionRegister + node.ReturnValueAmount - 1 do
+    for _ = expressionRegister + 1, expressionRegister + node.ReturnValueAmount - 1 do
       table.insert(returnRegisters, allocateRegister())
     end
     return unpack(returnRegisters)
@@ -1520,7 +1507,7 @@ function InstructionGenerator.generate(ast)
     -- OP_VARARG [A, B]    R(A), R(A+1), ..., R(A+B-1) = vararg
     addInstruction("VARARG", expressionRegister, returnAmount)
     local returnRegisters = { expressionRegister }
-    for index = expressionRegister + 1, expressionRegister + node.ReturnValueAmount - 1 do
+    for _ = expressionRegister + 1, expressionRegister + node.ReturnValueAmount - 1 do
       table.insert(returnRegisters, allocateRegister())
     end
     return unpack(returnRegisters)
@@ -1534,7 +1521,6 @@ function InstructionGenerator.generate(ast)
     return expressionRegister
   end
   local function compileTableNode(node, expressionRegister)
-    local elements         = node.Elements
     local implicitElements = node.ImplicitElements
     local explicitElements = node.ExplicitElements
     local sizeB = math.min(#implicitElements, 255)
@@ -1633,7 +1619,7 @@ function InstructionGenerator.generate(ast)
   end
 
   --// STATEMENT COMPILERS //--
-  local function compileBreakStatementNode(node)
+  local function compileBreakStatementNode()
     -- OP_JMP [A, sBx]    pc+=sBx
     local jumpInstructionIndex = addInstruction("JMP", 0, 0)
     table.insert(breakInstructions, jumpInstructionIndex)
@@ -1673,7 +1659,6 @@ function InstructionGenerator.generate(ast)
       local localRegister = findVariableRegister(variableName)
       processFunction(node, localRegister, variableName)
     elseif expression.VariableType == "Upvalue" then
-      local upvalueIndex = findOrCreateUpvalue(variableName)
       local closureRegister = allocateRegister()
       processFunction(node, closureRegister, variableName)
       -- OP_SETUPVAL [A, B]    UpValue[B] := R(A)
@@ -1754,7 +1739,7 @@ function InstructionGenerator.generate(ast)
       error("Expected 3 expression registers")
     end
     local loopStart = #code
-    for index, iteratorVariable in ipairs(iteratorVariables) do
+    for _, iteratorVariable in ipairs(iteratorVariables) do
       local iteratorRegister = allocateRegister()
       registerVariable(iteratorVariable, iteratorRegister)
     end
@@ -1878,7 +1863,7 @@ function InstructionGenerator.generate(ast)
 
   --// CODE GENERATION //--
   function processExpressionNode(node, expressionRegister)
-    local expressionRegister = expressionRegister or allocateRegister()
+    expressionRegister = expressionRegister or allocateRegister()
     local nodeType = node.TYPE
     while nodeType == "Expression" do
       node = node.Value
@@ -1905,7 +1890,7 @@ function InstructionGenerator.generate(ast)
     local nodeType = node.TYPE
     if nodeType == "FunctionCall" or nodeType == "MethodCall" then
       return deallocateRegisters({ processExpressionNode(node) })
-    elseif nodeType == "BreakStatement"           then return compileBreakStatementNode(node)
+    elseif nodeType == "BreakStatement"           then return compileBreakStatementNode()
     elseif nodeType == "LocalFunctionDeclaration" then return compileLocalFunctionDeclarationNode(node)
     elseif nodeType == "FunctionDeclaration"      then return compileFunctionDeclarationNode(node)
     elseif nodeType == "LocalDeclaration"         then return compileLocalDeclarationNode(node)
@@ -1933,7 +1918,7 @@ function InstructionGenerator.generate(ast)
   end
   function processCodeBlock(list)
     enterScope()
-    for index, node in ipairs(list) do
+    for _, node in ipairs(list) do
       processStatementNode(node)
     end
     exitScope()
@@ -1943,22 +1928,20 @@ function InstructionGenerator.generate(ast)
     for _, parameter in ipairs(parameters) do
       registerVariable(parameter, allocateRegister())
     end
-    for index, node in ipairs(list) do
+    for _, node in ipairs(list) do
       processStatementNode(node)
     end
     exitScope()
   end
   function processFunction(node, expressionRegister, name)
     local codeBlock    = node.Codeblock
-    local parameters   = node.Parameters
+    local parameters   = node.Parameters or {}
     local isVarArg     = node.IsVarArg
     local oldProto     = currentProto
     local proto        = newProto()
-    local parameters   = parameters or {}
-    local name         = (name and "@" .. name) or "@anonymous"
     proto.numParams    = #parameters
     proto.isVarArg     = isVarArg
-    proto.functionName = name
+    proto.functionName = (name and "@" .. name) or "@anonymous"
 
     processFunctionCodeBlock(codeBlock, parameters)
 
@@ -1969,7 +1952,7 @@ function InstructionGenerator.generate(ast)
     -- R(A) := closure(KPROTO[Bx], R(A), ... ,R(A+n))
     addInstruction("CLOSURE", expressionRegister, #protos - 1)
 
-    for index, upvalueName in ipairs(proto.upvalues) do
+    for _, upvalueName in ipairs(proto.upvalues) do
       local upvalueType = getVariableType(upvalueName)
       if upvalueType == "Local" then
         -- OP_MOVE [A, B]    R(A) := R(B)
@@ -2032,10 +2015,10 @@ local COMPILER_OPCODE_LOOKUP = {
 --]]
 
 local Compiler = {}
-function Compiler.compile(proto)
+function Compiler.compile(mainProto)
   --// BYTE MANIPULATION (needed for compiling to bytecode) //--
   local function twosComplement(value)
-    local value = value or 0
+    value = value or 0
     return math.max(value, -value - 1)
   end
   local function makeBytes(value, byteCount)
@@ -2048,9 +2031,6 @@ function Compiler.compile(proto)
   end
   local function makeOneByte(value)
     return string.char(value % 256)
-  end
-  local function makeTwoBytes(value)
-    return makeBytes(value, 2)
   end
   local function makeFourBytes(value)
     return makeBytes(value, 4)
@@ -2067,7 +2047,7 @@ function Compiler.compile(proto)
     elseif value == 1/0 then -- infinity
       mantissa, exponent = 0, 2047
     else
-      mantissa = (mantissa * 2 - 1) * math.ldexp(0.5, 53)
+      mantissa = (mantissa * 2 - 1) * (0.5 * (2 ^ 53))
       exponent = exponent + 1022
     end
 
@@ -2088,7 +2068,7 @@ function Compiler.compile(proto)
   local makeString, makeConstant, makeInstruction, makeConstantSection,
         makeCodeSection, makeFunction, makeHeader
   function makeString(value)
-    local value = value .. "\0"
+    value = value .. "\0"
     local size = makeEightBytes(#value)
     return size .. value
   end
@@ -2132,8 +2112,8 @@ function Compiler.compile(proto)
       constantSection = constantSection .. makeConstant(constant, constantType)
     end
     constantSection = constantSection .. makeFourBytes(#proto.protos) -- Number of protos
-    for _, proto in ipairs(proto.protos) do
-      constantSection = constantSection .. makeFunction(proto)
+    for _, childProto in ipairs(proto.protos) do
+      constantSection = constantSection .. makeFunction(childProto)
     end
     return constantSection
   end
@@ -2175,7 +2155,7 @@ function Compiler.compile(proto)
   --// MAIN //--
   local function compile()
     local header = makeHeader()
-    local functionHeader = makeFunction(proto)
+    local functionHeader = makeFunction(mainProto)
     return header .. functionHeader
   end
 
