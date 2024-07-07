@@ -100,13 +100,7 @@ Glossary:
     functionality.
 --]]
 
---[[
-  This function takes a list of elements and transforms it into a lookup table.
-  The primary purpose of this table is to provide a quick and efficient way to
-  check for the existence of a specific element in the list. By converting the
-  list into a lookup table, we can achieve O(1) time complexity for element
-  lookups, significantly enhancing the performance of our compiler.
---]]
+-- Converts a list to a lookup table for O(1) element lookups
 local function createLookupTable(list)
   local lookup = {}
   for _, value in ipairs(list) do
@@ -115,16 +109,7 @@ local function createLookupTable(list)
   return lookup
 end
 
---[[
-  The trie data structure, constructed by this function,
-  is an efficient information retrieval mechanism, particularly suited for
-  matching against a set of strings, such as operators in our case. By
-  organizing operators in a trie, we can perform rapid prefix-based searches
-  to identify longer, compound operators (like '==', '>=', etc.) in the
-  tokenization phase without backtracking. This method enhances the
-  performance and accuracy of our lexical analysis, ensuring that operators
-  are correctly identified and classified from the stream of characters.
---]]
+-- Constructs a trie for efficient prefix-based operator searches
 local function makeTrie(ops)
   -- Initialize the trie
   local trie = {}
