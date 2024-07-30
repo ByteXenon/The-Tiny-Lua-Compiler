@@ -173,7 +173,7 @@ local TOKENIZER_RESERVED_KEYWORDS_LOOKUP = createLookupTable({
   "while",    "do",     "end",   "for",
   "local",    "repeat", "until", "return",
   "in",       "if",     "else",  "elseif",
-  "function", "then",   "break", "continue"
+  "function", "then",   "break"
 })
 
 -- Lookup for operators.
