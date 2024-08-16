@@ -531,6 +531,8 @@ end
 --]]
 
 local PARSER_UNARY_OPERATOR_PRECEDENCE = 8
+local PARSER_MULTIRET_NODE_TYPES = createLookupTable({ "FunctionCall", "MethodCall", "VarArg" })
+local PARSER_LVALUE_NODE_TYPES   = createLookupTable({ "Variable", "TableIndex" })
 local PARSER_STOP_KEYWORDS       = createLookupTable({ "end", "else", "elseif", "until" })
 local PARSER_OPERATOR_PRECEDENCE = { ["+"]   = {6, 6},  ["-"]  = {6, 6},
                                      ["*"]   = {7, 7},  ["/"]  = {7, 7}, ["%"] = {7, 7},
@@ -653,12 +655,10 @@ function Parser.parse(tokens)
 
   --// NODE CHECKERS //--
   local function isValidAssignmentLvalue(node)
-    local nodeType = node.TYPE
-    return nodeType == "Variable" or nodeType == "TableIndex"
+    return PARSER_LVALUE_NODE_TYPES[node.TYPE]
   end
   local function isMultiretNode(node)
-    local nodeType = node.TYPE
-    return nodeType == "FunctionCall" or nodeType == "MethodCall" or nodeType == "VarArg"
+    return PARSER_MULTIRET_NODE_TYPES[node.TYPE]
   end
 
   --// EXPECTORS //--
@@ -1381,8 +1381,7 @@ function InstructionGenerator.generate(ast)
   --// UTILITY FUNCTIONS //--
   local function isMultiretNode(node)
     if not node then return false end
-    local nodeType = node.TYPE
-    return nodeType == "FunctionCall" or nodeType == "MethodCall" or nodeType == "VarArg"
+    return PARSER_MULTIRET_NODE_TYPES[node.TYPE]
   end
   local function updateJumpInstruction(instructionIndex)
     local currentInstructionIndex = #code
