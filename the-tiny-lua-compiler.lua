@@ -531,7 +531,7 @@ end
 --]]
 
 local PARSER_UNARY_OPERATOR_PRECEDENCE = 8
-local PARSER_MULTIRET_NODE_TYPES = createLookupTable({ "FunctionCall", "MethodCall", "VarArg" })
+local PARSER_MULTIRET_NODE_TYPES = createLookupTable({ "FunctionCall", "VarArg" })
 local PARSER_LVALUE_NODE_TYPES   = createLookupTable({ "Variable", "TableIndex" })
 local PARSER_STOP_KEYWORDS       = createLookupTable({ "end", "else", "elseif", "until" })
 local PARSER_OPERATOR_PRECEDENCE = { ["+"]   = {6, 6},  ["-"]  = {6, 6},
@@ -803,7 +803,7 @@ function Parser.parse(tokens)
     local arguments = consumeExpressions()
     adjustMultiretNodes(arguments, -1)
     consume() -- Consume the last token of the expression
-    return { TYPE = "FunctionCall", Expression = currentExpression, Arguments = arguments, ReturnValueAmount = 1 }
+    return { TYPE = "FunctionCall", Expression = currentExpression, Arguments = arguments, ReturnValueAmount = 1, WithSelf = false }
   end
   local function consumeImplicitFunctionCall(lvalue)
     local currentTokenType = currentToken.TYPE
@@ -811,19 +811,19 @@ function Parser.parse(tokens)
     -- <string>?
     if currentTokenType == "String" then
       local arguments = { currentToken }
-      return { TYPE = "FunctionCall", Expression = lvalue, Arguments = arguments, ReturnValueAmount = 1 }
+      return { TYPE = "FunctionCall", Expression = lvalue, Arguments = arguments, ReturnValueAmount = 1, WithSelf = false }
     end
 
     -- <table>?
     local arguments = { consumeTable() }
-    return { TYPE = "FunctionCall", Expression = lvalue, Arguments = arguments, ReturnValueAmount = 1 }
+    return { TYPE = "FunctionCall", Expression = lvalue, Arguments = arguments, ReturnValueAmount = 1, WithSelf = false }
   end
   local function consumeMethodCall(currentExpression)
     local methodIdentifier = consume().Value -- Consume the ":" character, and get the method identifier
     consume() -- Consume the method identifier
     local methodIndexNode = { TYPE = "TableIndex", Index = { TYPE = "String", Value = methodIdentifier }, Expression = currentExpression }
     local functionCallNode = consumeFunctionCall(methodIndexNode)
-    functionCallNode.TYPE = "MethodCall"
+    functionCallNode.WithSelf = true -- Mark the function call as a method call
     return functionCallNode
   end
   local function consumeOptionalSemilcolon()
@@ -1145,7 +1145,7 @@ function Parser.parse(tokens)
     if lvalue then
       if isValidAssignmentLvalue(lvalue) then
         return parseAssignment(lvalue)
-      elseif lvalueType == "FunctionCall" or lvalueType == "MethodCall" then
+      elseif lvalueType == "FunctionCall" then
         lvalue.ReturnValueAmount = 0
         return lvalue
       end
@@ -1439,39 +1439,25 @@ function InstructionGenerator.generate(ast)
     return expressionRegister
   end
   local function compileFunctionCallNode(node, expressionRegister)
-    processExpressionNode(node.Expression, expressionRegister)
-    local argumentRegisters = processExpressionNodes(node.Arguments)
-    local returnAmount      = node.ReturnValueAmount + 1
-    local argumentAmount = #node.Arguments + 1
-    if returnAmount <= 0 then returnAmount = 0 end
-    if node.Arguments[#node.Arguments] then
-      local lastArgument = node.Arguments[#node.Arguments]
-      if isMultiretNode(lastArgument) then
-        argumentAmount = 0
-      end
+    local selfArgumentRegister
+    if node.WithSelf then
+      local nodeExpressionIndex      = node.Expression.Index
+      local nodeExpressionExpression = node.Expression.Expression
+      processExpressionNode(nodeExpressionExpression, expressionRegister)
+      selfArgumentRegister = allocateRegister()
+      local nodeIndexRegister = processExpressionNode(nodeExpressionIndex)
+      -- OP_SELF [A, B, C]    R(A+1) := R(B) R(A) := R(B)[RK(C)]
+      addInstruction("SELF", expressionRegister, expressionRegister, nodeIndexRegister)
+      deallocateRegister(nodeIndexRegister)
+    else
+      processExpressionNode(node.Expression, expressionRegister)
     end
-    -- OP_CALL [A, B, C]    R(A), ... ,R(A+C-2) := R(A)(R(A+1), ... ,R(A+B-1))
-    addInstruction("CALL", expressionRegister, argumentAmount, returnAmount)
-    deallocateRegisters(argumentRegisters)
-    local returnRegisters = { expressionRegister }
-    for _ = expressionRegister + 1, expressionRegister + node.ReturnValueAmount - 1 do
-      table.insert(returnRegisters, allocateRegister())
-    end
-    return unpack(returnRegisters)
-  end
-  local function compileMethodCallNode(node, expressionRegister)
-    local nodeIndexIndex      = node.Expression.Index
-    local nodeIndexExpression = node.Expression.Expression
-    processExpressionNode(nodeIndexExpression, expressionRegister)
-    local selfArgumentRegister = allocateRegister()
-    local nodeIndexRegister = processExpressionNode(nodeIndexIndex)
-    -- OP_SELF [A, B, C]    R(A+1) := R(B) R(A) := R(B)[RK(C)]
-    addInstruction("SELF", expressionRegister, expressionRegister, nodeIndexRegister)
-    deallocateRegister(nodeIndexRegister)
     local argumentRegisters = processExpressionNodes(node.Arguments)
-    table.insert(argumentRegisters, 1, selfArgumentRegister) -- Insert the self argument at the beginning
-    local returnAmount = node.ReturnValueAmount + 1
-    local argumentAmount = #node.Arguments + 2
+    if selfArgumentRegister then
+      table.insert(argumentRegisters, 1, selfArgumentRegister)
+    end
+    local returnAmount   = node.ReturnValueAmount + 1
+    local argumentAmount = #argumentRegisters + 1
     if returnAmount <= 0 then returnAmount = 0 end
     if node.Arguments[#node.Arguments] then
       local lastArgument = node.Arguments[#node.Arguments]
@@ -1873,7 +1859,6 @@ function InstructionGenerator.generate(ast)
     elseif nodeType == "String"         then return compileStringNode(node, expressionRegister)
     elseif nodeType == "Function"       then return compileFunctionNode(node, expressionRegister)
     elseif nodeType == "FunctionCall"   then return compileFunctionCallNode(node, expressionRegister)
-    elseif nodeType == "MethodCall"     then return compileMethodCallNode(node, expressionRegister)
     elseif nodeType == "Constant"       then return compileConstantNode(node, expressionRegister)
     elseif nodeType == "VarArg"         then return compileVarArgNode(node, expressionRegister)
     elseif nodeType == "TableIndex"     then return compileTableIndexNode(node, expressionRegister)
@@ -1887,7 +1872,7 @@ function InstructionGenerator.generate(ast)
   end
   function processStatementNode(node)
     local nodeType = node.TYPE
-    if nodeType == "FunctionCall" or nodeType == "MethodCall" then
+    if nodeType == "FunctionCall" then
       return deallocateRegisters({ processExpressionNode(node) })
     elseif nodeType == "BreakStatement"           then return compileBreakStatementNode()
     elseif nodeType == "LocalFunctionDeclaration" then return compileLocalFunctionDeclarationNode(node)
