@@ -709,8 +709,7 @@ function Parser.parse(tokens)
     while currentToken.TYPE == "Identifier" do
       table.insert(identifiers, currentToken.Value)
       if not isComma(lookAhead()) then break end
-      consume() -- Consume identifier
-      consume() -- Consume comma
+      consume(2) -- Consume identifier and ","
     end
     return identifiers
   end
@@ -1340,7 +1339,6 @@ function InstructionGenerator.generate(ast)
       scope = previousScope
     end
     error("Could not find variable: " .. localName)
-    return nil
   end
   local function registerVariable(localName, register)
     locals[localName] = register
@@ -1456,14 +1454,10 @@ function InstructionGenerator.generate(ast)
     if selfArgumentRegister then
       table.insert(argumentRegisters, 1, selfArgumentRegister)
     end
-    local returnAmount   = node.ReturnValueAmount + 1
+    local returnAmount   = math.max(0, node.ReturnValueAmount + 1)
     local argumentAmount = #argumentRegisters + 1
-    if returnAmount <= 0 then returnAmount = 0 end
-    if node.Arguments[#node.Arguments] then
-      local lastArgument = node.Arguments[#node.Arguments]
-      if isMultiretNode(lastArgument) then
-        argumentAmount = 0
-      end
+    if isMultiretNode(node.Arguments[#node.Arguments]) then
+      argumentAmount = 0
     end
     -- OP_CALL [A, B, C]    R(A), ... ,R(A+C-2) := R(A)(R(A+1), ... ,R(A+B-1))
     addInstruction("CALL", expressionRegister, argumentAmount, returnAmount)
