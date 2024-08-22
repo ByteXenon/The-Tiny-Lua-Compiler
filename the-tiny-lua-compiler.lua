@@ -288,12 +288,9 @@ function Tokenizer.tokenize(code)
 
   --// CONSUMERS //--
   local function consumeWhitespace()
-    local whitespace = { curChar }
     while isWhitespace(lookAhead()) do
-      table.insert(whitespace, curChar)
       consume()
     end
-    return table.concat(whitespace)
   end
   local function consumeIdentifier()
     local identifier = { curChar }
@@ -1295,13 +1292,12 @@ function InstructionGenerator.generate(ast)
 
   --// REGISTER MANAGEMENT //--
   local function allocateRegister()
-    for i = 0, 255 do
-      if not takenRegisters[i] then
-        takenRegisters[i] = true
-        return i
-      end
+    local newRegister = (takenRegisters[0] and #takenRegisters + 1) or 0
+    if newRegister > 255 then
+      error("Out of registers")
     end
-    error("Out of registers")
+    takenRegisters[newRegister] = true
+    return newRegister
   end
   local function deallocateRegister(register)
     takenRegisters[register] = nil
