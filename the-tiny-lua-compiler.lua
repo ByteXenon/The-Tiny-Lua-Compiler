@@ -862,7 +862,7 @@ function Parser.parse(tokens)
         local parameters, isVarArg = consumeParameterList()
         local codeblock = parseCodeBlock(true, parameters)
         expectKeyword("end", true)
-        return { TYPE = "Function", Codeblock = codeblock, Parameters = parameters, IsVarArg = isVarArg }
+        return { TYPE = "Function", CodeBlock = codeblock, Parameters = parameters, IsVarArg = isVarArg }
       end
     end
     return nil
@@ -985,7 +985,7 @@ function Parser.parse(tokens)
       declareLocalVariable(name)
       local codeblock = parseCodeBlock(true, parameters)
       expectKeyword("end", true)
-      return { TYPE = "LocalFunctionDeclaration", Name = name, Codeblock = codeblock, Parameters = parameters, IsVarArg = isVarArg }
+      return { TYPE = "LocalFunctionDeclaration", Name = name, CodeBlock = codeblock, Parameters = parameters, IsVarArg = isVarArg }
     end
     local variables = consumeIdentifierList()
     if checkCharacter("=", lookAhead()) then
@@ -1006,20 +1006,20 @@ function Parser.parse(tokens)
     expectKeyword("do")
     local codeblock = parseCodeBlock()
     expectKeyword("end", true)
-    return { TYPE = "WhileLoop", Condition = condition, Codeblock = codeblock }
+    return { TYPE = "WhileLoop", Condition = condition, CodeBlock = codeblock }
   end
   local function parseRepeat()
     consume() -- Consume the "repeat" token
     local codeblock = parseCodeBlock()
     expectKeyword("until")
     local condition = consumeExpression()
-    return { TYPE = "RepeatLoop", Codeblock = codeblock, Condition = condition }
+    return { TYPE = "RepeatLoop", CodeBlock = codeblock, Condition = condition }
   end
   local function parseDo()
     consume() -- Consume the "do" token
     local codeblock = parseCodeBlock()
     expectKeyword("end", true)
-    return { TYPE = "DoBlock", Codeblock = codeblock }
+    return { TYPE = "DoBlock", CodeBlock = codeblock }
   end
   local function parseReturn()
     consume() -- Consume the "return" token
@@ -1072,7 +1072,7 @@ function Parser.parse(tokens)
       expectKeyword("do")
       local codeblock = parseCodeBlock(false, iteratorVariables)
       expectKeyword("end", true)
-      return { TYPE = "GenericForLoop", IteratorVariables = iteratorVariables, Expressions = expressions, Codeblock = codeblock }
+      return { TYPE = "GenericForLoop", IteratorVariables = iteratorVariables, Expressions = expressions, CodeBlock = codeblock }
     end
     expectCharacter("=")
     local expressions = consumeExpressions()
@@ -1080,7 +1080,7 @@ function Parser.parse(tokens)
     expectKeyword("do")
     local codeblock = parseCodeBlock(false, { variableName })
     expectKeyword("end", true)
-    return { TYPE = "NumericForLoop", VariableName = variableName, Expressions = expressions, Codeblock = codeblock }
+    return { TYPE = "NumericForLoop", VariableName = variableName, Expressions = expressions, CodeBlock = codeblock }
   end
   local function parseFunction()
     consume() -- Consume the "function" token
@@ -1112,7 +1112,7 @@ function Parser.parse(tokens)
       Expression = expression,
       Fields = fields,
       IsMethod = isMethod,
-      Codeblock = codeblock,
+      CodeBlock = codeblock,
       Parameters = parameters,
       IsVarArg = isVarArg
     }
@@ -1174,10 +1174,10 @@ function Parser.parse(tokens)
     consumeOptionalSemilcolon()
     return node
   end
-  function parseCodeBlock(isFunctionScope, variablesInCodeblock)
+  function parseCodeBlock(isFunctionScope, variablesInCodeBlock)
     enterScope(isFunctionScope)
-    if variablesInCodeblock then
-      declareLocalVariables(variablesInCodeblock)
+    if variablesInCodeBlock then
+      declareLocalVariables(variablesInCodeBlock)
     end
     local nodeList = { TYPE = "Group" }
     while currentToken do
@@ -1673,7 +1673,7 @@ function InstructionGenerator.generate(ast)
   local function compileNumericForLoopNode(node)
     local variableName  = node.VariableName
     local expressions   = node.Expressions
-    local codeblock     = node.Codeblock
+    local codeblock     = node.CodeBlock
     local startRegister = processExpressionNode(expressions[1])
     local endRegister   = processExpressionNode(expressions[2])
     local stepRegister  = allocateRegister()
@@ -1703,7 +1703,7 @@ function InstructionGenerator.generate(ast)
   local function compileGenericForLoopNode(node)
     local iteratorVariables   = node.IteratorVariables
     local expressions         = node.Expressions
-    local codeblock           = node.Codeblock
+    local codeblock           = node.CodeBlock
     local expressionRegisters = processExpressionNodes(expressions)
     -- OP_JMP [A, sBx]    pc+=sBx
     local startJmpInstructionIndex = addInstruction("JMP", 0, 0)
@@ -1754,7 +1754,7 @@ function InstructionGenerator.generate(ast)
     deallocateRegister(conditionRegister)
     local oldBreakInstructions = breakInstructions
     breakInstructions = {}
-    processCodeBlock(node.Codeblock)
+    processCodeBlock(node.CodeBlock)
     -- OP_JMP [A, sBx]    pc+=sBx
     addInstruction("JMP", 0, loopStart - #code - 1)
     updateJumpInstruction(jumpInstructionIndex)
@@ -1763,7 +1763,7 @@ function InstructionGenerator.generate(ast)
   end
   local function compileRepeatLoopNode(node)
     local loopStart = #code
-    processCodeBlock(node.Codeblock)
+    processCodeBlock(node.CodeBlock)
     local conditionRegister = processExpressionNode(node.Condition)
     -- OP_TEST [A, C]    if not (R(A) <=> C) then pc++
     addInstruction("TEST", conditionRegister, 0, 0)
@@ -1772,7 +1772,7 @@ function InstructionGenerator.generate(ast)
     deallocateRegister(conditionRegister)
   end
   local function compileDoBlockNode(node)
-    processCodeBlock(node.Codeblock)
+    processCodeBlock(node.CodeBlock)
   end
   local function compileIfStatementNode(node)
     local branches      = node.Branches
@@ -1908,7 +1908,7 @@ function InstructionGenerator.generate(ast)
     exitScope()
   end
   function processFunction(node, expressionRegister, name)
-    local codeBlock    = node.Codeblock
+    local codeBlock    = node.CodeBlock
     local parameters   = node.Parameters or {}
     local isVarArg     = node.IsVarArg
     local oldProto     = currentProto
