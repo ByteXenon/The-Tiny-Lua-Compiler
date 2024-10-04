@@ -70,14 +70,6 @@ Glossary:
     to execute the function and manage its execution context. Each Lua function, whether
     defined in Lua or C, is represented internally by a function prototype.
 
-  Closure:
-    A powerful feature in many programming languages, including Lua, where a function
-    is able to remember and access its lexical scope even when the function is executing
-    outside that scope. This is particularly useful for creating private variables and
-    maintaining state across function calls. Closures are created at runtime and can
-    capture and carry with them any upvalues from their defining scope, enabling
-    function-level encapsulation and data hiding.
-
   Scope:
     Defines the visibility and lifetime of variables and parameters in a program. In Lua,
     scope is determined by the location of variable declarations. Variables can be global,
@@ -531,17 +523,21 @@ local PARSER_UNARY_OPERATOR_PRECEDENCE = 8
 local PARSER_MULTIRET_NODE_TYPES = createLookupTable({ "FunctionCall", "VarArg" })
 local PARSER_LVALUE_NODE_TYPES   = createLookupTable({ "Variable", "TableIndex" })
 local PARSER_STOP_KEYWORDS       = createLookupTable({ "end", "else", "elseif", "until" })
-local PARSER_OPERATOR_PRECEDENCE = { ["+"]   = {6, 6},  ["-"]  = {6, 6},
-                                     ["*"]   = {7, 7},  ["/"]  = {7, 7}, ["%"] = {7, 7},
-                                     ["^"]   = {10, 9}, [".."] = {5, 4},
-                                     ["=="]  = {3, 3},  ["~="] = {3, 3},
-                                     ["<"]   = {3, 3},  [">"]  = {3, 3}, ["<="] = {3, 3}, [">="] = {3, 3},
-                                     ["and"] = {2, 2},  ["or"] = {1, 1} }
+local PARSER_OPERATOR_PRECEDENCE = {
+  ["+"]   = {6, 6},  ["-"]  = {6, 6},
+  ["*"]   = {7, 7},  ["/"]  = {7, 7}, ["%"] = {7, 7},
+  ["^"]   = {10, 9}, [".."] = {5, 4},
+  ["=="]  = {3, 3},  ["~="] = {3, 3},
+  ["<"]   = {3, 3},  [">"]  = {3, 3}, ["<="] = {3, 3}, [">="] = {3, 3},
+  ["and"] = {2, 2},  ["or"] = {1, 1}
+}
 local PARSER_LUA_UNARY_OPERATORS  = createLookupTable({ "-", "#", "not" })
-local PARSER_LUA_BINARY_OPERATORS = createLookupTable({ "+",  "-",   "*",  "/",
-                                      "%",  "^",   "..", "==",
-                                      "~=", "<",   ">",  "<=",
-                                      ">=", "and", "or" })
+local PARSER_LUA_BINARY_OPERATORS = createLookupTable({
+  "+",  "-",   "*",  "/",
+  "%",  "^",   "..", "==",
+  "~=", "<",   ">",  "<=",
+  ">=", "and", "or"
+})
 
 --[[
     ============================================================================
@@ -592,7 +588,7 @@ function Parser.parse(tokens)
   --// SCOPE MANAGEMENT //--
   local function enterScope(isFunctionScope)
     local scope = {
-      localVariables = {},
+      localVariables  = {},
       isFunctionScope = isFunctionScope
     }
     table.insert(scopeStack, scope)
@@ -641,13 +637,19 @@ function Parser.parse(tokens)
           and token.Value == keyword
   end
   local function isComma(token)
-    return token and token.TYPE == "Character" and token.Value == ","
+    return token
+          and token.TYPE == "Character"
+          and token.Value == ","
   end
   local function isUnaryOperator(token)
-    return token and token.TYPE == "Operator" and PARSER_LUA_UNARY_OPERATORS[token.Value]
+    return token
+          and token.TYPE == "Operator"
+          and PARSER_LUA_UNARY_OPERATORS[token.Value]
   end
   local function isBinaryOperator(token)
-    return token and token.TYPE == "Operator" and PARSER_LUA_BINARY_OPERATORS[token.Value]
+    return token
+          and token.TYPE == "Operator"
+          and PARSER_LUA_BINARY_OPERATORS[token.Value]
   end
 
   --// NODE CHECKERS //--
@@ -747,7 +749,7 @@ function Parser.parse(tokens)
     local explicitElements    = {}
     local internalImplicitKey = 1
 
-    -- Consume table elements
+    -- Loop until we find a "}" (end of the table)
     while not checkCharacter("}") do
       local key, value
       local isImplicitKey = false
@@ -777,6 +779,7 @@ function Parser.parse(tokens)
       table.insert(elements, element)
 
       consume() -- Consume the last token of the expression
+      -- Table elements can be separated by "," or ";"
       local shouldContinue = checkCharacter(",") or checkCharacter(";")
       if not shouldContinue then break end
       consume() -- Consume ","
@@ -810,7 +813,7 @@ function Parser.parse(tokens)
       return { TYPE = "FunctionCall", Expression = lvalue, Arguments = arguments, ReturnValueAmount = 1, WithSelf = false }
     end
 
-    -- <table>?
+    -- <table>
     local arguments = { consumeTable() }
     return { TYPE = "FunctionCall", Expression = lvalue, Arguments = arguments, ReturnValueAmount = 1, WithSelf = false }
   end
@@ -953,6 +956,7 @@ function Parser.parse(tokens)
   function consumeExpression(returnRawNode)
     local expression = parseBinaryExpression(0)
     if not expression then
+      -- Backtrack to the last token
       consume(-1)
       return
     end
@@ -1504,7 +1508,7 @@ function InstructionGenerator.generate(ast)
     addInstruction("NEWTABLE", expressionRegister, sizeB, sizeC)
     for _, element in ipairs(explicitElements) do
       local valueRegister = processExpressionNode(element.Value)
-      local keyRegister = processExpressionNode(element.Key)
+      local keyRegister   = processExpressionNode(element.Key)
       deallocateRegisters({ valueRegister, keyRegister })
       -- OP_SETTABLE [A, B, C]    R(A)[RK(B)] := RK(C)
       addInstruction("SETTABLE", expressionRegister, keyRegister, valueRegister)
