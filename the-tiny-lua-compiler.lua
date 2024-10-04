@@ -1991,7 +1991,7 @@ local COMPILER_OPCODE_LOOKUP = {
 local Compiler = {}
 function Compiler.compile(mainProto)
   --// BYTE MANIPULATION (needed for compiling to bytecode) //--
-  local function twosComplement(value)
+  local function toUnsigned(value)
     value = value or 0
     return math.max(value, -value - 1)
   end
@@ -2062,16 +2062,16 @@ function Compiler.compile(mainProto)
   function makeInstruction(instruction)
     local opcodeTable = COMPILER_OPCODE_LOOKUP[instruction[1]]
     local opcode, opmode = unpack(opcodeTable)
-    local a = twosComplement(instruction[2])
+    local a = toUnsigned(instruction[2])
     local instructionNumber = opcode
     instructionNumber = instructionNumber + (a * 64) -- a << 6
     if opmode == MODE_iABC then
-      local b = twosComplement(instruction[3])
-      local c = twosComplement(instruction[4])
+      local b = toUnsigned(instruction[3])
+      local c = toUnsigned(instruction[4])
       instructionNumber = instructionNumber + (b * 8388608) -- b << 23
       instructionNumber = instructionNumber + (c * 16384)   -- c << 14
     elseif opmode == MODE_iABx then
-      local b = twosComplement(instruction[3])
+      local b = toUnsigned(instruction[3])
       instructionNumber = instructionNumber + (b * 16384) -- b << 14
     elseif opmode == MODE_iAsBx then
       local b = instruction[3]
