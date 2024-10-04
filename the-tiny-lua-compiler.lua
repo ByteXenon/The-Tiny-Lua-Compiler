@@ -244,10 +244,6 @@ function Tokenizer.tokenize(code)
     char = char or curChar
     return char:match("%s")
   end
-  local function isNumberStart(char)
-    char = char or curChar
-    return char:match("%d")
-  end
   local function isNumber(char)
     char = char or curChar
     return char:match("%d")
@@ -463,7 +459,7 @@ function Tokenizer.tokenize(code)
     elseif isComment() then
       consumeComment()
       return
-    elseif isNumberStart(curChar) then
+    elseif isNumber(curChar) then
       return { TYPE = "Number", Value = tonumber(consumeNumber()) }
     elseif isIdentifierStart(curChar) then
       local identifier = consumeIdentifier()
