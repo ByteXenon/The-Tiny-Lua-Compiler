@@ -1219,6 +1219,7 @@ end
 --]]
 local unpack = (unpack or table.unpack)
 
+local COMPILER_SETLIST_MAX = 50
 local COMPILER_SIMPLE_ARICHMETIC_OPERATOR_LOOKUP = {
   ["+"] = "ADD", ["-"] = "SUB",
   ["*"] = "MUL", ["/"] = "DIV",
@@ -1513,21 +1514,34 @@ function InstructionGenerator.generate(ast)
       -- OP_SETTABLE [A, B, C]    R(A)[RK(B)] := RK(C)
       addInstruction("SETTABLE", expressionRegister, keyRegister, valueRegister)
     end
-    local implicitKeyValues = {}
-    for _, element in ipairs(implicitElements) do
-      local valueRegister = processExpressionNode(element.Value)
-      table.insert(implicitKeyValues, valueRegister)
-    end
-    if #implicitKeyValues > 0 then
-      local implicitKeyAmount = #implicitKeyValues
-      local lastImplicitValue = implicitElements[#implicitElements].Value.Value
-      if isMultiretNode(lastImplicitValue) then
-        implicitKeyAmount = 0
+
+    local pages = math.ceil(#implicitElements / COMPILER_SETLIST_MAX)
+    for page = 1, pages do
+      local startIndex = (page - 1) * COMPILER_SETLIST_MAX + 1
+      local endIndex   = math.min(page * COMPILER_SETLIST_MAX, #implicitElements)
+
+      local currentPageRegisters = {}
+      for elementIndex = startIndex, endIndex do
+        local element       = implicitElements[elementIndex]
+        local elementValue  = element.Value
+        local valueRegister = processExpressionNode(elementValue)
+
+        table.insert(currentPageRegisters, valueRegister)
       end
+
+      local lastElement               = implicitElements[endIndex]
+      local lastElementValue          = lastElement.Value.Value
+      local currentPageRegisterAmount = #currentPageRegisters
+      if page == pages and isMultiretNode(lastElementValue) then
+         -- B = 0: Doesn't have a fixed amount of keys (multiret)
+         currentPageRegisterAmount = 0
+      end
+
       -- OP_SETLIST [A, B, C]    R(A)[(C-1)*FPF+i] := R(A+i), 1 <= i <= B
-      addInstruction("SETLIST", expressionRegister, implicitKeyAmount, 1)
-      deallocateRegisters(implicitKeyValues)
+      addInstruction("SETLIST", expressionRegister, currentPageRegisterAmount, page)
+      deallocateRegisters(currentPageRegisters)
     end
+
     return expressionRegister
   end
   local function compileVariableNode(node, expressionRegister)
