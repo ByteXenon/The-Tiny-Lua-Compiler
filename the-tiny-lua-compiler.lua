@@ -281,60 +281,61 @@ function Tokenizer.tokenize(code)
     end
   end
   local function consumeIdentifier()
-    local identifier = { curChar }
+    local start = curCharPos
     while isIdentifier(lookAhead()) do
-      table.insert(identifier, consume())
+      consume()
     end
-    return table.concat(identifier)
+    return code:sub(start, curCharPos)
   end
   local function consumeInteger(maxLength)
-    local integer = { curChar }
+    local start = curCharPos
     while lookAhead():match("%d") do
-      if (maxLength and #integer >= maxLength) then break end
-      table.insert(integer, consume())
+      if (maxLength and (curCharPos - start) >= maxLength) then
+        break
+      end
+      consume()
     end
-    return table.concat(integer)
+    return code:sub(start, curCharPos)
   end
   local function consumeNumber()
-    local number = { curChar }
+    local start = curCharPos
 
     -- Hexadecimal number case
     -- 0[xX][0-9a-fA-F]+
     if isHexadecimalNumberPrefix() then
-      table.insert(number, consume()) -- Consume the "0"
-      table.insert(number, consume()) -- Consume the "x"
+      consume(2) -- Consume the "0x" part
       while isNumber(lookAhead()) or lookAhead():match("[a-fA-F]") do
-        table.insert(number, consume())
+        consume() -- Consume hexadecimal digits
       end
-      return table.concat(number)
+      return code:sub(start, curCharPos)
     end
 
     while isNumber(lookAhead()) do
-      table.insert(number, consume())
+      consume() -- Consume digits
     end
 
     -- Floating point number case
     -- [0-9]*\.[0-9]+
     if lookAhead() == "." then
-      table.insert(number, consume()) -- Consume the "."
+      consume() -- Consume the "."
       while isNumber(lookAhead()) do
-        table.insert(number, consume())
+        consume()
       end
     end
 
     -- Exponential (scientific) notation case
     -- [eE][+-]?[0-9]+
     if isScientificNotationPrefix(lookAhead()) then
-      table.insert(number, consume()) -- Consume the "e" or "E"
-      if lookAhead() == "+" or lookAhead() == "-" then -- Consume optional sign
-        table.insert(number, consume())
+      consume() -- Consume the "e" or "E"
+      if lookAhead() == "+" or lookAhead() == "-" then
+        consume() -- Consume optional sign
       end
       while isNumber(lookAhead()) do
-        table.insert(number, consume())
+        consume() -- Consume exponent digits
       end
     end
 
-    return table.concat(number)
+    return code:sub(start, curCharPos)
   end
   local function consumeSimpleString()
     local delimiter = curChar
@@ -360,8 +361,8 @@ function Tokenizer.tokenize(code)
   end
   local function consumeLongString()
     consume() -- Consume the "[" character
+    local start = curCharPos
     local depth = 0
-    local content = ""
     while curChar == "=" do
       consume() -- Consume the "=" character
       depth = depth + 1
@@ -369,6 +370,7 @@ function Tokenizer.tokenize(code)
     if curChar ~= "[" then
       error("invalid long string delimiter")
     end
+
     consume() -- Consume the "[" character
     while true do
       if curChar == "]" then
@@ -379,18 +381,17 @@ function Tokenizer.tokenize(code)
           closingDepth = closingDepth + 1
         end
         if closingDepth == depth and curChar == "]" then
-          break -- Exit the loop, as the closing delimiter is fully matched
+          -- Exit the loop, as the closing delimiter is fully matched
+          break
         end
-        -- If it's not a valid closing delimiter, add the "]" and "=" characters to content
-        content = content .. "]" .. string.rep("=", closingDepth)
       elseif curChar == "\0" then
         error("Unclosed long comment")
       end
 
-      content = content .. curChar
       consume()
     end
-    return content
+
+    return code:sub(start + depth + 1, curCharPos - 2 - depth)
   end
   local function consumeString()
     if curChar == "[" then
